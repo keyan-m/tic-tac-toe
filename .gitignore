@@ -1,0 +1,9 @@
+*~
+.*
+!/.gitignore
+tic-tac-toe-frontend/.*
+tic-tac-toe-frontend/dist
+tic-tac-toe-frontend/elm-stuff
+tic-tac-toe-frontend/node_modules
+tic-tac-toe-frontend/package-lock.json
+tic-tac-toe-backend/.*

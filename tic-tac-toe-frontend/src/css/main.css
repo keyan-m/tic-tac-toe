@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+}
+
+@layer components {
+  .anim-fadeIn {
+    animation: anim-fadeIn 200ms;
+  }
+  @keyframes anim-fadeIn {
+    0% {
+      opacity: 0;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+}
+
+@layer utilities {
+}
