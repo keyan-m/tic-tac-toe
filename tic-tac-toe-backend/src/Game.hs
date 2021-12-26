@@ -34,14 +34,21 @@ import Player
 
 -- MODEL
 -- {{{
-data Result = Inconclusive | Draw | XWon | OWon
+data Result
+  = Inconclusive
+  | Draw
+  | XWon
+  | OWon
 
 
-data Mark = X | O deriving (Generic, Eq, Show)
+data Mark
+  = X
+  | O
+  deriving (Generic, Eq, Show)
 deriveBoth defaultOptions ''Mark
 
 
--- PLAYGROUND
+-- PLAYGROUND (3 x 3) TODO: add more playground sizes.
 -- {{{
 data Playground = Playground
   { slot00 :: Maybe (Int, Mark)
@@ -155,15 +162,15 @@ playgroundsDia0 :: Playground -> (Maybe Mark, Maybe Mark, Maybe Mark)
 playgroundsDia0 pg =
   -- {{{
   ( fmap snd $ slot00 pg
-  ,               fmap snd $ slot11 pg
-  ,                             fmap snd $ slot22 pg
+  ,                         fmap snd $ slot11 pg
+  ,                                                fmap snd $ slot22 pg
   )
   -- }}}
 playgroundsDia1 :: Playground -> (Maybe Mark, Maybe Mark, Maybe Mark)
 playgroundsDia1 pg =
   -- {{{
-  (                             fmap snd $ slot02 pg
-  ,               fmap snd $ slot11 pg
+  (                                               fmap snd $ slot02 pg
+  ,                        fmap snd $ slot11 pg
   , fmap snd $ slot20 pg
   )
   -- }}}
@@ -217,29 +224,27 @@ deriveBoth defaultOptions ''Info
 
 data Game = Game Info Players
 
-newtype MaybeGame = MaybeGame (Maybe Game) deriving (Generic, Show)
-deriveBoth defaultOptions ''MaybeGame
-
 getGameCode :: Game -> String
-getGameCode game =
+getGameCode (Game info _) =
   -- {{{
-  case game of
-    WaitingForO code _ ->
-      code
-    Game info ->
-      gameCode info
+  gameCode info
   -- }}}
 
-startAGame :: String -> Bool -> Player -> Player -> Game
-startAGame code xToStart xP oP =
+kickOff :: String -> Bool -> Player -> Player -> Game
+kickOff code xToStart xP oP =
   -- {{{
-  Game $ GameInfo
-    { gameCode   = code
-    , xPlayer    = xP
-    , oPlayer    = oP
-    , xStarted   = xToStart
-    , playground = emptyPlayground
-    }
+  Game
+    ( Info
+        { gameCode   = code
+        , xStarted   = xToStart
+        , playground = emptyPlayground
+        }
+    )
+    ( Players
+        { xPlayer = xP
+        , oPlayer = oP
+        }
+    )
   -- }}}
 
 join :: Game -> ConnectionRequest -> Maybe Game
@@ -273,7 +278,12 @@ fromElm (ElmGame info players) = Game info (Player.fromElms players)
 
 toElm :: Game -> ElmGame
 toElm (Game info players) = ElmGame info (Player.toElms players)
+
+newtype MaybeGame = MaybeGame (Maybe ElmGame) deriving (Generic, Show)
+deriveBoth defaultOptions ''MaybeGame
 -- }}}
+
+
 -- }}}
 
 

@@ -97,12 +97,29 @@ getGames appState = do
 -- API
 -- {{{
 type Api
-  --   This is the initial request from the X player.
-     = "new"   :> ReqBody '[JSON] String       :> Post '[JSON] String
-  :<|> "join"  :> ReqBody '[JSON] JoinGameInfo :> Post '[JSON] MaybeGame
-  :<|> "close" :> ReqBody '[JSON] String       :> Post '[JSON] ()
-  :<|> "play"  :> Capture "gameCode"           :> WebSocket
+  ---- The initial request from the X player ----------------------- v
+     = "new"   :> ReqBody '[JSON] ElmPlayer
+               :> Post '[JSON] String
+  ------------------------------------------------------------------ ^
+  --
+  ---- The initial request from the O player ----------------------- v
+  :<|> "join"  :> ReqBody '[JSON] ElmConnectionRequest
+               :> Post '[JSON] MaybeGame
+  ------------------------------------------------------------------ ^
+  --
+  ---- Request to close a game that is waiting for another player -- v
+  :<|> "close" :> ReqBody '[JSON] String
+               :> Post '[JSON] ()
+  ------------------------------------------------------------------ ^
+  --
+  ---- Endpoint for WebSocket -------------------------------------- v
+  :<|> "play"  :> Capture "gameCode"
+               :> WebSocket -- TODO: Switch to WebSocketPending 
+  ------------------------------------------------------------------ ^
+  --
+  ---- Endpoint for serving static files --------------------------- v
   :<|> Raw
+  ------------------------------------------------------------------ ^
 
 api :: Proxy Api
 api = Proxy
@@ -174,16 +191,15 @@ closeGameHandler code = do
 wsHandler :: String -> Connection -> ApiHandler ()
 wsHandler gameCode conn = do
   -- {{{
-  receivedText <- liftIO $ receiveDataMessage conn
-  let bsFromClient =
-    case receivedText of
-      WS.Text byteStr _ -> byteStr
-      WS.Binary byteStr -> byteStr
+  receivedVessel <- liftIO $ fmap WS.fromDataMessage $ receiveDataMessage conn
   -- (putStrLn $ T.pack $ show bsFromClient) >> (liftIO $ threadDelay 100000)
-  case (decode bsFromClient :: Maybe Vessel) of
-    Nothing ->
+  case receivedVessel of
+    Vessel.Empty ->
       return ()
-    Just Vessel.OPlayerJoined ->
+    Vessel.XPlayerRegistration (ElmPlayer playerTag) ->
+      return ()
+    Vessel.OPlayerRegistration (ElmPlayer playerTag) ->
+      return ()
   liftIO $ sendTextData conn bsFromClient
   -- liftIO . forM_ [1..] $ \i -> do
   --   forkPingThread conn 10
