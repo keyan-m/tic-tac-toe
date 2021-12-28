@@ -18,7 +18,9 @@ import Player (ElmPlayer)
 data Vessel
   = Empty
   | XPlayerRegistration ElmPlayer
-  | OPlayerRegistration ElmPlayer
+  | OPlayerJoinRequest  ElmPlayer
+  deriving (Generic, Show)
+
 deriveBoth defaultOptions ''Vessel
 
 instance WebSocketsData Vessel where

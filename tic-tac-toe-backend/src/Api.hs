@@ -104,7 +104,7 @@ type Api
   --
   ---- The initial request from the O player ----------------------- v
   :<|> "join"  :> ReqBody '[JSON] ElmConnectionRequest
-               :> Post '[JSON] MaybeGame
+               :> Post '[JSON] Game.JoinResult
   ------------------------------------------------------------------ ^
   --
   ---- Request to close a game that is waiting for another player -- v
@@ -143,28 +143,28 @@ newGameHandler xPTag = do
   -- }}}
 
 
-joinGame :: [Game] -> ConnectionRequest -> ([Game], MaybeGame)
+joinGame :: [Game] -> ElmConnectionRequest -> ([Game], Game.JoinResult)
 joinGame currPool req =
   -- {{{
   let
     go soFar gs =
       case gs of
         [] ->
-          (soFar, MaybeGame Nothing)
+          (soFar, Game.failedJoinInvalidCode)
         g : rest ->
           case Game.join g req of
-            Nothing ->
+            Game.FailedJoin _ ->
               go (soFar ++ [g]) rest
-            Just joinedGame ->
+            Game.SuccessfulJoin joinedElmGame ->
               ( soFar ++ (joinedGame : rest)
-              , MaybeGame $ Just joinedGame
+              , MaybeGame $ Just $ Game.toElm joinedGame
               )
   in
   go [] currPool
   -- }}}
 
 
-joinGameHandler :: ConnectionRequest -> ApiHandler MaybeGame
+joinGameHandler :: ElmConnectionRequest -> ApiHandler MaybeGame
 joinGameHandler req = do
   -- {{{
   appState <- ask
@@ -198,7 +198,7 @@ wsHandler gameCode conn = do
       return ()
     Vessel.XPlayerRegistration (ElmPlayer playerTag) ->
       return ()
-    Vessel.OPlayerRegistration (ElmPlayer playerTag) ->
+    Vessel.OPlayerJoinRequest  (ElmPlayer playerTag) ->
       return ()
   liftIO $ sendTextData conn bsFromClient
   -- liftIO . forM_ [1..] $ \i -> do

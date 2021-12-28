@@ -10,13 +10,17 @@
 -- {{{
 module Game
   ( Game (..)
-  , GameInfo (..)
-  , MaybeGame (..)
+  , ElmGame (..)
+  , Info (..)
+  , JoinResult (..)
+  , ElmJoinResult (..)
   , Mark (..)
   , Playground
   , getGameCode
-  , startAGame
+  , kickOff
   , join
+  , failedJoinInvalidCode
+  , elmFailedJoinInvalidCode
   , Msg (..)
   , update
   ) where
@@ -247,24 +251,28 @@ kickOff code xToStart xP oP =
     )
   -- }}}
 
-join :: Game -> ConnectionRequest -> Maybe Game
-join (WaitingForO code xP) req =
+join :: ElmConnectionRequest -> Game -> JoinResult
+join req game@(Game info players) =
   -- {{{
   let
-    targetCode = requestedGameCode req
+    currCode   = gameCode info
+    targetCode = elmRequestedGameCode req
   in
-  if code == targetCode then
-    Just $ Game $ GameInfo
-      { gameCode   = code
-      , xPlayer    = xP
-      , oPlayer    = requestingPlayer req
-      , xStarted   = True
-      , playground = emptyPlayground
+  if currCode == targetCode then
+    -- {{{
+    SuccessfulJoin $
+    Right $ Game info $ players
+      { oPlayer =
+          elmRequestingPlayer req
+          & Player.fromElm
+          & Just
       }
+    -- }}}
   else
-    Nothing
+    -- {{{
+    failedJoinInvalidCode
+    -- }}}
   -- }}}
-join _ _ = Nothing
 -- }}}
 
 
@@ -279,8 +287,40 @@ fromElm (ElmGame info players) = Game info (Player.fromElms players)
 toElm :: Game -> ElmGame
 toElm (Game info players) = ElmGame info (Player.toElms players)
 
-newtype MaybeGame = MaybeGame (Maybe ElmGame) deriving (Generic, Show)
-deriveBoth defaultOptions ''MaybeGame
+data JoinResult
+  = FailedJoin     String
+  | SuccessfulJoin Game
+
+data ElmJoinResult
+  = ElmFailedJoin     String
+  | ElmSuccessfulJoin ElmGame
+  deriving (Generic, Show)
+deriveBoth defaultOptions ''ElmJoinResult
+
+failedJoinInvalidCode =
+  FailedJoin    "Invalid game code."
+elmFailedJoinInvalidCode =
+  ElmFailedJoin "Invalid game code."
+
+elmJoin :: ElmConnectionRequest -> ElmGame -> ElmJoinResult
+elmJoin req game@(ElmGame info elmPlayers) =
+  -- {{{
+  let
+    currCode   = gameCode info
+    targetCode = elmRequestedGameCode req
+  in
+  if currCode == targetCode then
+    -- {{{
+    ElmSuccessfulJoin $ Game info $ players
+      { oElmPlayer =
+          Just $ elmRequestingPlayer req
+      }
+    -- }}}
+  else
+    -- {{{
+    failedJoinInvalidCode
+    -- }}}
+  -- }}}
 -- }}}
 
 

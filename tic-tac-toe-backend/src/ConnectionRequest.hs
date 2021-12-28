@@ -20,7 +20,7 @@ data ElmConnectionRequest = ElmConnectionRequest
   { elmRequestedGameCode :: String
   , elmRequestingPlayer  :: ElmPlayer
   } deriving (Generic, Show, Eq)
-deriveBoth defaultOptions ''ConnectionRequest
+deriveBoth defaultOptions ''ElmConnectionRequest
 
 
 toElm :: ConnectionRequest -> ElmConnectionRequest
