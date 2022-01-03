@@ -14,8 +14,7 @@ data Player = Player
   , conn  :: Maybe WS.Connection
   }
 
-newtype ElmPlayer = ElmPlayer String
-deriving (Generig, Show)
+newtype ElmPlayer = ElmPlayer String deriving (Generic, Show)
 deriveBoth defaultOptions ''ElmPlayer
 
 
@@ -23,23 +22,12 @@ data Players = Players
   { xPlayer :: Maybe Player
   , oPlayer :: Maybe Player
   }
-instance Functor Players where
-  fmap f players = Players
-    { xPlayer = fmap f (xPlayer players)
-    , oPlayer = fmap f (oPlayer players)
-    }
 
 data ElmPlayers = ElmPlayers
   { xElmPlayer :: Maybe ElmPlayer
   , oElmPlayer :: Maybe ElmPlayer
   } deriving (Generic, Show)
 deriveBoth defaultOptions ''ElmPlayers
-
-instance Functor ElmPlayers where
-  fmap f players = ElmPlayers
-    { xElmPlayer = fmap f (xElmPlayer players)
-    , oElmPlayer = fmap f (oElmPlayer players)
-    }
 
 
 fromElm :: ElmPlayer -> Player
@@ -59,9 +47,18 @@ toElm player =
 
 
 fromElms :: ElmPlayers -> Players
-fromElms = fmap fromElm
+fromElms ps =
+  Players
+    { xPlayer = fmap fromElm (xElmPlayer ps)
+    , oPlayer = fmap fromElm (oElmPlayer ps)
+    }
 
 toElms :: Players -> ElmPlayers
-toElms = fmap toElm
+toElms ps =
+  ElmPlayers
+    { xElmPlayer = fmap toElm (xPlayer ps)
+    , oElmPlayer = fmap toElm (oPlayer ps)
+    }
+
 
 

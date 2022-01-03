@@ -37,12 +37,13 @@ import Data.Aeson
 import Network.Wai
 import Network.Wai.Handler.Warp
 import qualified Network.WebSockets as WS
-import Network.WebSockets
-  ( Connection
-  , forkPingThread
-  , sendTextData
-  , receiveDataMessage
-  )
+-- import Network.WebSockets
+--   ( PendingConnection
+--   , Connection
+--   , forkPingThread
+--   , sendTextData
+--   , receiveDataMessage
+--   )
 import Servant
 import Servant.Server.StaticFiles (serveDirectoryWith)
 import qualified WaiAppStatic.Types as WaiStatic
@@ -53,20 +54,52 @@ import Lucid.Base
 import Lucid.Html5
 import Servant.HTML.Lucid
 import Servant.API.WebSocket
-  ( WebSocket
+  ( WebSocketPending
   )
 import RandomCode
-import ConnectionRequest
-import Game
-  ( Game (..)
-  , MaybeGame (..)
-  , getGameCode
-  , startAGame
-  , Msg (..)
-  , update
-  )
+import Game (Game (..), ElmGame (..))
 import qualified Game
-import Vessel
+import Player (Player (..), Players (..), ElmPlayer (..), ElmPlayers (..))
+import qualified Player
+import qualified Join
+import Vessel (Vessel)
+import qualified Vessel
+-- }}}
+
+
+
+-- API
+-- {{{
+type Api
+  ---- The initial request from the X player ----------------------- v
+     = "new"   :> ReqBody '[JSON] ElmPlayer
+               :> Post    '[JSON] ElmGame
+  ------------------------------------------------------------------ ^
+  --
+  ---- The initial request from the O player ----------------------- v
+  :<|> "join"  :> Capture "gameCode" String
+               :> ReqBody '[JSON] ElmPlayer
+               :> Post    '[JSON] Join.ElmResult
+  ------------------------------------------------------------------ ^
+  --
+  ---- Request to close a game that is waiting for another player -- v
+  :<|> "close" :> ReqBody '[JSON] String
+               :> Post    '[JSON] ()
+  ------------------------------------------------------------------ ^
+  --
+  ---- Endpoint for WebSocket -------------------------------------- v
+  :<|> "play"  :> Capture "gameCode" String
+               :> WebSocketPending
+  ------------------------------------------------------------------ ^
+  --
+  ---- Endpoint for serving static files --------------------------- v
+  :<|> Raw
+  ------------------------------------------------------------------ ^
+
+api :: Proxy Api
+api = Proxy
+
+type ApiHandler = ReaderT AppState Servant.Handler
 -- }}}
 
 
@@ -94,85 +127,58 @@ getGames appState = do
 
 
 
--- API
--- {{{
-type Api
-  ---- The initial request from the X player ----------------------- v
-     = "new"   :> ReqBody '[JSON] ElmPlayer
-               :> Post '[JSON] String
-  ------------------------------------------------------------------ ^
-  --
-  ---- The initial request from the O player ----------------------- v
-  :<|> "join"  :> ReqBody '[JSON] ElmConnectionRequest
-               :> Post '[JSON] Game.JoinResult
-  ------------------------------------------------------------------ ^
-  --
-  ---- Request to close a game that is waiting for another player -- v
-  :<|> "close" :> ReqBody '[JSON] String
-               :> Post '[JSON] ()
-  ------------------------------------------------------------------ ^
-  --
-  ---- Endpoint for WebSocket -------------------------------------- v
-  :<|> "play"  :> Capture "gameCode"
-               :> WebSocket -- TODO: Switch to WebSocketPending 
-  ------------------------------------------------------------------ ^
-  --
-  ---- Endpoint for serving static files --------------------------- v
-  :<|> Raw
-  ------------------------------------------------------------------ ^
-
-api :: Proxy Api
-api = Proxy
-
-type ApiHandler = ReaderT AppState Servant.Handler
--- }}}
-
-
-
 -- HANDLERS
 -- {{{
-newGameHandler :: String -> ApiHandler String
-newGameHandler xPTag = do
+newGameHandler :: ElmPlayer -> ApiHandler ElmGame
+newGameHandler elmPlayer = do
   -- {{{
   appState <- ask -- :: ReaderT r m r
   allGames <- getGames appState
-  newGameCode <- uniqueRandom6Chars (map getGameCode allGames)
+  newGameCode <- uniqueRandom6Chars (map Game.getCode allGames)
+  let newGame = Game.new newGameCode elmPlayer
   atomically
-    ( writeTVar (games appState) (WaitingForO newGameCode xP : allGames)
-    ) & fmap (const newGameCode)
+    ( writeTVar
+        (games appState)
+        (newGame : allGames)
+    )
+    & fmap (const $ Game.toElm newGame)
   -- }}}
 
 
-joinGame :: [Game] -> ElmConnectionRequest -> ([Game], Game.JoinResult)
-joinGame currPool req =
+joinGameFromPool :: String -> ElmPlayer -> [Game] -> (Join.ElmResult, [Game])
+joinGameFromPool targetCode elmPlayer currPool =
   -- {{{
   let
-    go soFar gs =
+    go gs soFar =
       case gs of
         [] ->
-          (soFar, Game.failedJoinInvalidCode)
-        g : rest ->
-          case Game.join g req of
-            Game.FailedJoin _ ->
-              go (soFar ++ [g]) rest
-            Game.SuccessfulJoin joinedElmGame ->
-              ( soFar ++ (joinedGame : rest)
-              , MaybeGame $ Just $ Game.toElm joinedGame
+          (Join.elmFailedInvalidCode, soFar)
+        g : restOfGames ->
+          let
+            joinResult = Join.attempt targetCode elmPlayer g
+          in
+          case joinResult of
+            Join.Failed _ ->
+              go restOfGames (soFar ++ [g])
+            Join.Successful joinedGame ->
+              ( Join.toElm joinResult
+              , soFar ++ (joinedGame : restOfGames)
               )
   in
-  go [] currPool
+  go currPool []
   -- }}}
 
 
-joinGameHandler :: ElmConnectionRequest -> ApiHandler MaybeGame
-joinGameHandler req = do
+joinGameHandler :: String -> ElmPlayer -> ApiHandler Join.ElmResult
+joinGameHandler targetCode elmPlayer = do
   -- {{{
   appState <- ask
   allGames <- getGames appState
-  let (updatedGames, mNewGame) = joinGame allGames req
+  let (joinResult, updatedPool) =
+        joinGameFromPool targetCode elmPlayer allGames
   atomically
-    ( writeTVar (games appState) updatedGames
-    ) & fmap (const mNewGame)
+    ( writeTVar (games appState) updatedPool
+    ) & fmap (const joinResult)
   -- }}}
 
 
@@ -181,26 +187,81 @@ closeGameHandler code = do
   -- {{{
   appState <- ask
   allGames <- getGames appState
-  let newGames = filter (\g -> (getGameCode g) /= code) allGames
-  seq
-    (trace ("ALL GAMES: " ++ show allGames) ())
-    (atomically $ writeTVar (games appState) newGames)
+  let newGames = filter (\g -> (Game.getCode g) /= code) allGames
+  atomically $ writeTVar (games appState) newGames
   -- }}}
 
 
-wsHandler :: String -> Connection -> ApiHandler ()
-wsHandler gameCode conn = do
+updatePoolFrom :: WS.Connection -> String -> Vessel -> [Game] -> (Vessel, [Game])
+updatePoolFrom conn targetCode givenVes pool =
   -- {{{
-  receivedVessel <- liftIO $ fmap WS.fromDataMessage $ receiveDataMessage conn
-  -- (putStrLn $ T.pack $ show bsFromClient) >> (liftIO $ threadDelay 100000)
-  case receivedVessel of
+  let
+    go :: (Game -> Game) -> [Game] -> [Game] -> (Vessel, [Game])
+    go updateFn remainingGames soFar =
+      -- {{{
+      case remainingGames of
+        [] ->
+          -- {{{
+          (Vessel.GameNotFound, soFar)
+          -- }}}
+        g : gs ->
+          -- {{{
+          let
+            currCode = Game.getCode g
+          in
+          if currCode == targetCode then
+            ( Vessel.Empty
+            , soFar ++ (updateFn g : gs)
+            )
+          else
+            go updateFn gs (soFar ++ [g])
+          -- }}}
+      -- }}}
+  in
+  case givenVes of
     Vessel.Empty ->
-      return ()
+      -- {{{
+      (Vessel.Empty, pool)
+      -- }}}
     Vessel.XPlayerRegistration (ElmPlayer playerTag) ->
-      return ()
+      -- {{{
+      go
+        ( \(Game info players) ->
+              Game info $ players
+                { Player.xPlayer = Just $ Player playerTag (Just conn)
+                }
+        )
+        pool
+        []
+      -- }}}
     Vessel.OPlayerJoinRequest  (ElmPlayer playerTag) ->
-      return ()
-  liftIO $ sendTextData conn bsFromClient
+      -- {{{
+      go
+        ( \(Game info players) ->
+              Game info $ players
+                { Player.oPlayer = Just $ Player playerTag (Just conn)
+                }
+        )
+        pool
+        []
+      -- }}}
+  -- }}}
+
+
+wsHandler :: String -> WS.PendingConnection -> ApiHandler ()
+wsHandler gameCode pendingConn = do
+  -- {{{
+  appState <- ask
+  allGames <- getGames appState
+  --
+  conn           <- liftIO $ WS.acceptRequest pendingConn
+  receivedVessel <- liftIO $ WS.receiveData conn
+  --
+  let (responseVessel, newPool) =
+        updatePoolFrom conn gameCode receivedVessel allGames
+  liftIO $ WS.sendTextData conn responseVessel
+  atomically $ writeTVar (games appState) newPool
+  -- liftIO $ sendTextData conn bsFromClient
   -- liftIO . forM_ [1..] $ \i -> do
   --   forkPingThread conn 10
   --   sendTextData conn (T.pack $ show (i :: Int)) >> threadDelay 1000000

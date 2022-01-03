@@ -11,28 +11,31 @@
 module Game
   ( Game (..)
   , ElmGame (..)
+  , fromElm
+  , toElm
   , Info (..)
-  , JoinResult (..)
-  , ElmJoinResult (..)
   , Mark (..)
   , Playground
-  , getGameCode
+  , getCode
+  , new
   , kickOff
   , join
-  , failedJoinInvalidCode
-  , elmFailedJoinInvalidCode
-  , Msg (..)
-  , update
   ) where
 -- }}}
 
 
 -- IMPORTS
 -- {{{
-import ClassyPrelude hiding (join)
+import ClassyPrelude
 import Data.Function ((&))
 import Elm.Derive
 import Player
+  ( Player (..)
+  , ElmPlayer (..)
+  , Players (..)
+  , ElmPlayers (..)
+  )
+import qualified Player
 -- }}}
 
 
@@ -228,11 +231,30 @@ deriveBoth defaultOptions ''Info
 
 data Game = Game Info Players
 
-getGameCode :: Game -> String
-getGameCode (Game info _) =
+getCode :: Game -> String
+getCode (Game info _) =
   -- {{{
   gameCode info
   -- }}}
+
+
+new :: String -> ElmPlayer -> Game
+new newCode elmPlayer =
+  -- {{{
+  Game
+    ( Info
+        { gameCode = newCode
+        , xStarted = True
+        , playground = emptyPlayground
+        }
+    )
+    ( Players
+        { Player.xPlayer = Just $ Player.fromElm elmPlayer
+        , Player.oPlayer = Nothing
+        }
+    )
+  -- }}}
+
 
 kickOff :: String -> Bool -> Player -> Player -> Game
 kickOff code xToStart xP oP =
@@ -245,33 +267,10 @@ kickOff code xToStart xP oP =
         }
     )
     ( Players
-        { xPlayer = xP
-        , oPlayer = oP
+        { Player.xPlayer = Just xP
+        , Player.oPlayer = Just oP
         }
     )
-  -- }}}
-
-join :: ElmConnectionRequest -> Game -> JoinResult
-join req game@(Game info players) =
-  -- {{{
-  let
-    currCode   = gameCode info
-    targetCode = elmRequestedGameCode req
-  in
-  if currCode == targetCode then
-    -- {{{
-    SuccessfulJoin $
-    Right $ Game info $ players
-      { oPlayer =
-          elmRequestingPlayer req
-          & Player.fromElm
-          & Just
-      }
-    -- }}}
-  else
-    -- {{{
-    failedJoinInvalidCode
-    -- }}}
   -- }}}
 -- }}}
 
@@ -286,88 +285,9 @@ fromElm (ElmGame info players) = Game info (Player.fromElms players)
 
 toElm :: Game -> ElmGame
 toElm (Game info players) = ElmGame info (Player.toElms players)
-
-data JoinResult
-  = FailedJoin     String
-  | SuccessfulJoin Game
-
-data ElmJoinResult
-  = ElmFailedJoin     String
-  | ElmSuccessfulJoin ElmGame
-  deriving (Generic, Show)
-deriveBoth defaultOptions ''ElmJoinResult
-
-failedJoinInvalidCode =
-  FailedJoin    "Invalid game code."
-elmFailedJoinInvalidCode =
-  ElmFailedJoin "Invalid game code."
-
-elmJoin :: ElmConnectionRequest -> ElmGame -> ElmJoinResult
-elmJoin req game@(ElmGame info elmPlayers) =
-  -- {{{
-  let
-    currCode   = gameCode info
-    targetCode = elmRequestedGameCode req
-  in
-  if currCode == targetCode then
-    -- {{{
-    ElmSuccessfulJoin $ Game info $ players
-      { oElmPlayer =
-          Just $ elmRequestingPlayer req
-      }
-    -- }}}
-  else
-    -- {{{
-    failedJoinInvalidCode
-    -- }}}
-  -- }}}
 -- }}}
 
 
 -- }}}
 
 
--- UPDATE
--- {{{
-data Msg
-  = NoOp
-  | AddMark (Int, Int) Mark
-
-update :: Msg -> Game -> Game
-update msg game =
-  case (msg, game) of
-    (NoOp, _) ->
-      -- {{{
-      game
-      -- }}}
-    (AddMark coords newMark, Game info) ->
-      -- {{{
-      let
-        pg = playground info
-        fromNewIndex newIndex =
-          -- {{{
-          Game $
-            info
-              { playground =
-                  setMarkAt (newIndex, newMark) coords pg
-              }
-          -- }}}
-      in
-      case getLastMove pg of
-        Nothing ->
-          -- {{{
-          fromNewIndex 0
-          -- }}}
-        Just (prevIndex, prevMark) ->
-          -- {{{
-          if prevMark /= newMark then
-            fromNewIndex $ prevIndex + 1
-          else
-            game
-          -- }}}
-      -- }}}
-    (AddMark _ _, WaitingForO _ _) ->
-      -- {{{
-      game
-      -- }}}
--- }}}

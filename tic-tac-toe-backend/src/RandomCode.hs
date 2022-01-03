@@ -1,8 +1,10 @@
+{-# LANGUAGE NoImplicitPrelude #-}
+
 module RandomCode (uniqueRandom6Chars) where
 
 import ClassyPrelude
 import Data.Function ((&))
-import Data.Char (chr)
+import Data.Char (chr, isAlpha)
 import System.Random
 
 randomChar :: MonadIO m => m Char

@@ -4,7 +4,7 @@
 
 clear
 date
-echo -e "=============================\n"
+echo -e "===============================\n"
 
 
 # {{{ CONSTANTS 
@@ -51,10 +51,12 @@ copyFrontend() { # Copy the frontend files to the remote server.
 
 closeServer() { # Two attempts at finding the server process and killing it.
   # {{{
+  echo -e "Closing the server..."
   pid=$(runRemoteCommand "ps -eo pid,stat,command | grep $remoteDir/$project/$project-backend/.stack-work/install/* | grep 'Ssl' | awk '{print \$1}'")
   runRemoteCommand "kill $pid"
   pid=$(runRemoteCommand "ps -eo pid,stat,command | grep $remoteDir/$project/$project-backend/.stack-work/install/* | grep 'Sl' | awk '{print \$1}'")
   runRemoteCommand "kill $pid"
+  echo -e "Done.\n"
   # }}}
 }
 
