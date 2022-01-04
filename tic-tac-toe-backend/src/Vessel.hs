@@ -14,14 +14,17 @@ import Network.WebSockets (WebSocketsData)
 import qualified Network.WebSockets as WS
 import Elm.Derive
 import Player (ElmPlayer)
+import Game (ElmGame)
 
 
 data Vessel
   = Empty
   | GameNotFound
-  | XPlayerRegistration ElmPlayer
-  | OPlayerJoinRequest  ElmPlayer
-  | Collection [Vessel]
+  | GameIsFull
+  | RegistrationRequest    ElmPlayer
+  | RegistrationSuccessful
+  | OpponentJoined         ElmGame
+  | Collection            [Vessel]
   deriving (Generic, Show)
 
 deriveBoth defaultOptions ''Vessel
@@ -50,6 +53,7 @@ instance Semigroup Vessel where
   v               <> (Collection vs) = Collection (v : vs)
   v1              <> v2              = Collection [v1, v2]
   -- }}}
+
 instance Monoid Vessel where
   -- {{{
   mempty = Empty

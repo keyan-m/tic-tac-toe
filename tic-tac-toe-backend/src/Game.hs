@@ -86,12 +86,11 @@ emptyPlayground = Playground
 
 playgroundToList :: Playground -> [(Int, Mark)]
 playgroundToList
-  ( Playground
-      { slot00 = slot00 , slot01 = slot01 , slot02 = slot02
-      , slot10 = slot10 , slot11 = slot11 , slot12 = slot12
-      , slot20 = slot20 , slot21 = slot21 , slot22 = slot22
-      }
-  ) =
+  Playground
+    { slot00 = slot00 , slot01 = slot01 , slot02 = slot02
+    , slot10 = slot10 , slot11 = slot11 , slot12 = slot12
+    , slot20 = slot20 , slot21 = slot21 , slot22 = slot22
+    } =
   -- {{{
   [ slot00 , slot01 , slot02
   , slot10 , slot11 , slot12
@@ -123,63 +122,63 @@ getLastMove pg =
   & maximumByMay (\(ind0, _) (ind1, _) -> compare ind0 ind1)
   -- }}}
 
+tripletFromAccessor acc1 acc2 acc3 pg =
+  (snd <$> acc1 pg, snd <$> acc2 pg, snd <$> acc3 pg)
+
 playgroundsRow0 :: Playground -> (Maybe Mark, Maybe Mark, Maybe Mark)
-playgroundsRow0 pg =
+playgroundsRow0 =
   -- {{{
-  ( fmap snd $ slot00 pg , fmap snd $ slot01 pg , fmap snd $ slot02 pg
-  )
+  tripletFromAccessor slot00 slot01 slot02
   -- }}}
 playgroundsRow1 :: Playground -> (Maybe Mark, Maybe Mark, Maybe Mark)
-playgroundsRow1 pg =
+playgroundsRow1 =
   -- {{{
-  ( fmap snd $ slot10 pg , fmap snd $ slot11 pg , fmap snd $ slot12 pg
-  )
+  tripletFromAccessor slot10 slot11 slot12
   -- }}}
 playgroundsRow2 :: Playground -> (Maybe Mark, Maybe Mark, Maybe Mark)
-playgroundsRow2 pg =
+playgroundsRow2 =
   -- {{{
-  ( fmap snd $ slot20 pg , fmap snd $ slot21 pg , fmap snd $ slot22 pg
-  )
+  tripletFromAccessor slot20 slot21 slot22
   -- }}}
 playgroundsCol0 :: Playground -> (Maybe Mark, Maybe Mark, Maybe Mark)
-playgroundsCol0 pg =
+playgroundsCol0 =
   -- {{{
-  ( fmap snd $ slot00 pg
-  , fmap snd $ slot10 pg
-  , fmap snd $ slot20 pg
-  )
+  tripletFromAccessor
+    slot00
+    slot10
+    slot20
   -- }}}
 playgroundsCol1 :: Playground -> (Maybe Mark, Maybe Mark, Maybe Mark)
-playgroundsCol1 pg =
+playgroundsCol1 =
   -- {{{
-  ( fmap snd $ slot01 pg
-  , fmap snd $ slot11 pg
-  , fmap snd $ slot21 pg
-  )
+  tripletFromAccessor
+    slot01
+    slot11
+    slot21
   -- }}}
 playgroundsCol2 :: Playground -> (Maybe Mark, Maybe Mark, Maybe Mark)
-playgroundsCol2 pg =
+playgroundsCol2 =
   -- {{{
-  ( fmap snd $ slot02 pg
-  , fmap snd $ slot12 pg
-  , fmap snd $ slot22 pg
-  )
+  tripletFromAccessor
+    slot02
+    slot12
+    slot22
   -- }}}
 playgroundsDia0 :: Playground -> (Maybe Mark, Maybe Mark, Maybe Mark)
-playgroundsDia0 pg =
+playgroundsDia0 =
   -- {{{
-  ( fmap snd $ slot00 pg
-  ,                         fmap snd $ slot11 pg
-  ,                                                fmap snd $ slot22 pg
-  )
+  tripletFromAccessor
+    slot00
+    slot11
+    slot22
   -- }}}
 playgroundsDia1 :: Playground -> (Maybe Mark, Maybe Mark, Maybe Mark)
-playgroundsDia1 pg =
+playgroundsDia1 =
   -- {{{
-  (                                               fmap snd $ slot02 pg
-  ,                        fmap snd $ slot11 pg
-  , fmap snd $ slot20 pg
-  )
+  tripletFromAccessor
+    slot02
+    slot11
+    slot20
   -- }}}
 
 findResultFromTriplet :: (Maybe Mark, Maybe Mark, Maybe Mark) -> Result

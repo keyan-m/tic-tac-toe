@@ -75,7 +75,7 @@ flagsDecoder =
 
 type Page
   = LandingPage LandingPrompt
-  | GamePage Game
+  | GamePage    ElmGame
 
 type LandingPrompt
   = NoPrompt
@@ -161,7 +161,7 @@ type Msg
   | StartFadingInNewPage Page Int
   | PutUpNewPage Page Int
   | RequestNewGameCode
-  | HandleNewGameCodeResponse (Result Http.Error String)
+  | HandleNewGameCodeResponse (Result Http.Error ElmGame)
   | CloseServer
   | RequestJoinGame
   | HandleJoinGameResponse (Result Http.Error MaybeGame)
@@ -352,13 +352,9 @@ update msg model =
     HandleNewGameCodeResponse res ->
       -- {{{
       case res of
-        Ok initNewGameCode ->
-          let
-            newGameCode = -- shouldn't be necessary, but just in case.
-              String.filter Char.isAlpha initNewGameCode
-          in
+        Ok (ElmGame info players) ->
           ( { model
-            | gameCode = newGameCode
+            | gameCode = info.gameCode
             }
           , Cmd.batch
               [ openSocket newGameCode

@@ -14,7 +14,10 @@ data Player = Player
   , conn  :: Maybe WS.Connection
   }
 
-newtype ElmPlayer = ElmPlayer String deriving (Generic, Show)
+data ElmPlayer = ElmPlayer
+  { elmTag      :: String
+  , isConnected :: Bool
+  } deriving (Generic, Show)
 deriveBoth defaultOptions ''ElmPlayer
 
 
@@ -31,7 +34,7 @@ deriveBoth defaultOptions ''ElmPlayers
 
 
 fromElm :: ElmPlayer -> Player
-fromElm (ElmPlayer theTag) =
+fromElm (ElmPlayer theTag _) =
   -- {{{
   Player
     { tag  = theTag
@@ -42,7 +45,10 @@ fromElm (ElmPlayer theTag) =
 toElm :: Player -> ElmPlayer
 toElm player =
   -- {{{
-  ElmPlayer $ tag player
+  ElmPlayer
+    { elmTag      = tag player
+    , isConnected = isJust $ conn player
+    }
   -- }}}
 
 

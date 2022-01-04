@@ -8,7 +8,7 @@ module Join where
 
 import ClassyPrelude
 import Elm.Derive
-import Player (Player (..), Players (..), ElmPlayer (..))
+import Player (Player (..), Players (..), ElmPlayer (..), ElmPlayers (..))
 import qualified Player
 import Game (Game (..), ElmGame (..))
 import qualified Game
@@ -56,7 +56,7 @@ attempt targetCode elmPlayer game@(Game info players) =
   if currCode == targetCode then
     -- {{{
     Successful $ Game info $ players
-      { oPlayer = Just $ Player.fromElm $ elmPlayer
+      { oPlayer = Just $ Player.fromElm elmPlayer
       }
     -- }}}
   else

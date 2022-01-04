@@ -21,6 +21,6 @@ run = do
     , DefineElm (Proxy :: Proxy Player.ElmPlayers)
     , DefineElm (Proxy :: Proxy Game.Info)
     , DefineElm (Proxy :: Proxy Game.ElmGame)
-    -- , DefineElm (Proxy :: Proxy Join.Result)
+    , DefineElm (Proxy :: Proxy Join.ElmResult)
     , DefineElm (Proxy :: Proxy Vessel.Vessel)
     ]

@@ -31,21 +31,25 @@ remoteProjectDir="$remoteUser@$remoteIP:$remoteDir/$project"
 # {{{ FUNCTIONS 
 copyBackend() { # Copy the backend files to the remote server.
   # {{{
-  rsync -av -e ssh           \
+  echo "Copying backend files..."
+  rsync -a -e ssh            \
     --exclude=".*"           \
     $project-backend         \
     $remoteProjectDir
+  echo -e "Done.\n"
   # }}}
 }
 
 copyFrontend() { # Copy the frontend files to the remote server.
   # {{{
-  rsync -av -e ssh           \
+  echo "Copying frontend files..."
+  rsync -a -e ssh            \
     --exclude=".*"           \
     --exclude="node_modules" \
     --exclude="elm-stuff"    \
     $project-frontend        \
     $remoteProjectDir
+  echo -e "Done.\n"
   # }}}
 }
 
@@ -90,6 +94,11 @@ case $1 in
   start)
     # {{{
     closeServer
+
+    echo -e "/-------------------------------- hlint --------------------------------\\"
+    hlint $project-backend/src
+    echo -e "\-------------------------------- hlint --------------------------------/\n"
+
     copyBackend
     copyFrontend
     case $2 in
