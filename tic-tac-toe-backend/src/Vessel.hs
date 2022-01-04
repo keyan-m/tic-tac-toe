@@ -21,6 +21,7 @@ data Vessel
   = Empty
   | GameNotFound
   | GameIsFull
+  | InvalidRequest
   | RegistrationRequest    String ElmPlayer
   | RegistrationSuccessful ElmGame
   | OpponentJoined         ElmGame

@@ -55,7 +55,7 @@ function connectWS() {
   socket = new WebSocket(wsHost + "/play");
   socket.addEventListener("message", function(msg) {
     app.ports.vesselReceived.send(JSON.parse(msg.data));
-    console.log(msg);
+    console.log(JSON.parse(msg.data));
   });
   console.log("WebSocket is now open.");
   // }}}
@@ -84,15 +84,15 @@ app.ports.openSocketAndSend.subscribe(function(vessel) {
 });
 
 
-// app.ports.closeSocket.subscribe(function() {
-//   // {{{
-//   try {
-//     socket.close();
-//   } catch(e) {
-//   }
-//   socket = undefined;
-//   // }}}
-// });
+app.ports.closeSocket.subscribe(function() {
+  // {{{
+  try {
+    socket.close();
+  } catch(e) {
+  }
+  socket = undefined;
+  // }}}
+});
 
 
 // app.ports.sendThroughSocket.subscribe(function(jsonData) {

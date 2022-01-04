@@ -397,6 +397,7 @@ update msg model =
               (UB.absolute ["close"] [])
               (Http.jsonBody (E.string model.gameCode))
               (Http.expectWhatever (always NoOp))
+          , closeSocket ()
           ]
       )
       -- }}}
@@ -480,7 +481,7 @@ update msg model =
 
 port setBackgroundColor : String  -> Cmd msg
 port openSocketAndSend  : E.Value -> Cmd msg
--- port closeSocket        : ()      -> Cmd msg
+port closeSocket        : ()      -> Cmd msg
 -- port sendThroughSocket  : E.Value -> Cmd msg
 -- }}}
 
@@ -521,19 +522,23 @@ viewInput colorScheme id lbl val msg =
     ]
   -- }}}
 
+
+buttonAttrs colorScheme =
+  [ HA.class "flex items-center justify-center"
+  , HA.class "py-2 px-8 font-mono rounded-lg text-center"
+  , HA.class "shadow active:shadow-sm"
+  , HA.class colorScheme.btnBg
+  , HA.class colorScheme.btnTxt
+  , HA.class duration
+  , HA.class "transition-colors select-none"
+  ]
+
 viewFormButton : ColorScheme -> String -> Html msg
 viewFormButton colorScheme lbl =
   -- {{{
   H.button
-    [ HA.type_ "submit"
-    , HA.class "flex items-center justify-center"
-    , HA.class "py-2 px-8 font-mono rounded-lg text-center"
-    , HA.class "shadow active:shadow-sm"
-    , HA.class colorScheme.btnBg
-    , HA.class colorScheme.btnTxt
-    , HA.class duration
-    , HA.class "transition-colors select-none"
-    ] [H.text lbl]
+    ( HA.type_ "submit" :: buttonAttrs colorScheme
+    ) [H.text lbl]
   -- }}}
 
 
@@ -753,8 +758,11 @@ viewGamePage colorScheme fadingOut (ElmGame info ps) =
             [ HA.class "text-center font-bold text-2xl"
             ] [H.text info.gameCode]
         , H.div
-            [ HA.class "text-center font-xl pt-4"
+            [ HA.class "text-center font-xl py-4"
             ] [H.text "Waiting for opponent..."]
+        , H.button
+            (HE.onClick CloseServer :: buttonAttrs colorScheme)
+            [H.text "Close"]
         ]
       -- }}}
     connText isConned =
