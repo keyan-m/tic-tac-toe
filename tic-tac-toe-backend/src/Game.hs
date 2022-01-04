@@ -237,8 +237,8 @@ getCode (Game info _) =
   -- }}}
 
 
-new :: String -> ElmPlayer -> Game
-new newCode elmPlayer =
+new :: String -> String -> Game
+new newCode xPTag =
   -- {{{
   Game
     ( Info
@@ -248,7 +248,7 @@ new newCode elmPlayer =
         }
     )
     ( Players
-        { Player.xPlayer = Just $ Player.fromElm elmPlayer
+        { Player.xPlayer = Just $ Player xPTag Nothing
         , Player.oPlayer = Nothing
         }
     )

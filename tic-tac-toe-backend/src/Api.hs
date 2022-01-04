@@ -71,7 +71,7 @@ import qualified Vessel
 -- {{{
 type Api
   ---- The initial request from the X player ----------------------- v
-     = "new"   :> ReqBody '[JSON] ElmPlayer
+     = "new"   :> ReqBody '[JSON] String
                :> Post    '[JSON] ElmGame
   ------------------------------------------------------------------ ^
   --
@@ -87,8 +87,7 @@ type Api
   ------------------------------------------------------------------ ^
   --
   ---- Endpoint for WebSocket -------------------------------------- v
-  :<|> "play"  :> Capture "gameCode" String
-               :> WebSocketPending
+  :<|> "play"  :> WebSocketPending
   ------------------------------------------------------------------ ^
   --
   ---- Endpoint for serving static files --------------------------- v
@@ -127,13 +126,13 @@ getGames appState = do
 
 -- HANDLERS
 -- {{{
-newGameHandler :: ElmPlayer -> ApiHandler ElmGame
-newGameHandler elmPlayer = do
+newGameHandler :: String -> ApiHandler ElmGame
+newGameHandler xPTag = do
   -- {{{
   appState <- ask -- :: ReaderT r m r
   allGames <- getGames appState
   newGameCode <- uniqueRandom6Chars (map Game.getCode allGames)
-  let newGame = Game.new newGameCode elmPlayer
+  let newGame = Game.new newGameCode xPTag
   atomically
     ( writeTVar
         (games appState)
@@ -198,18 +197,18 @@ data WrappedVessel
   | OneVessel WS.Connection Vessel
 
 updatePoolFrom :: WS.Connection
-               -> String
                -> Vessel
                -> [Game]
                -> (WrappedVessel, [Game])
-updatePoolFrom conn targetCode givenVes pool =
+updatePoolFrom conn givenVes pool =
   -- {{{
   let
-    go :: (Game -> (WrappedVessel, Game))
+    go :: String
+       -> (Game -> (WrappedVessel, Game))
        -> [Game]
        -> [Game]
        -> (WrappedVessel, [Game])
-    go updateFn remainingGames soFar =
+    go targetCode updateFn remainingGames soFar =
       -- {{{
       case remainingGames of
         [] ->
@@ -229,7 +228,7 @@ updatePoolFrom conn targetCode givenVes pool =
             , soFar ++ (newG : gs)
             )
           else
-            go updateFn gs (soFar ++ [g])
+            go targetCode updateFn gs (soFar ++ [g])
           -- }}}
       -- }}}
   in
@@ -238,9 +237,10 @@ updatePoolFrom conn targetCode givenVes pool =
       -- {{{
       (OneVessel conn Vessel.Empty, pool)
       -- }}}
-    Vessel.RegistrationRequest (ElmPlayer playerTag False) ->
+    Vessel.RegistrationRequest targetCode (ElmPlayer playerTag False) ->
       -- {{{
       go
+        targetCode
         ( \g@(Game info players) ->
               let
                 mXP = Player.xPlayer players
@@ -249,10 +249,17 @@ updatePoolFrom conn targetCode givenVes pool =
               case (mXP, mOP) of
                 (Nothing, Nothing) ->
                   -- {{{
-                  ( OneVessel conn Vessel.RegistrationSuccessful
-                  , Game info $ players
-                      { Player.xPlayer = Just $ Player playerTag (Just conn)
-                      }
+                  let
+                    newGame =
+                      Game info $ players
+                        { Player.xPlayer =
+                            Just $ Player playerTag (Just conn)
+                        }
+                  in
+                  ( OneVessel
+                      conn
+                      (Vessel.RegistrationSuccessful $ Game.toElm newGame)
+                  , newGame
                   )
                   -- }}}
                 (Just xP, Nothing) ->
@@ -263,6 +270,7 @@ updatePoolFrom conn targetCode givenVes pool =
                         { Player.oPlayer =
                             Just $ Player playerTag (Just conn)
                         }
+                    newElmGame = Game.toElm newGame
                   in
                   ( case Player.conn xP of
                       Just xConn ->
@@ -270,17 +278,19 @@ updatePoolFrom conn targetCode givenVes pool =
                         TwoVessels
                           { xPayload =
                               ( xConn
-                              , Vessel.OpponentJoined $ Game.toElm newGame
+                              , Vessel.OpponentJoined newElmGame
                               )
                           , oPayload =
                               ( conn
-                              , Vessel.RegistrationSuccessful
+                              , Vessel.RegistrationSuccessful newElmGame
                               )
                           }
                         -- }}}
                       Nothing ->
                         -- {{{
-                        OneVessel conn Vessel.RegistrationSuccessful
+                        OneVessel
+                          conn
+                          (Vessel.RegistrationSuccessful newElmGame)
                         -- }}}
                   , newGame
                   )
@@ -293,6 +303,7 @@ updatePoolFrom conn targetCode givenVes pool =
                         { Player.xPlayer =
                             Just $ Player playerTag (Just conn)
                         }
+                    newElmGame = Game.toElm newGame
                   in
                   ( case Player.conn oP of
                       Just oConn ->
@@ -300,17 +311,19 @@ updatePoolFrom conn targetCode givenVes pool =
                         TwoVessels
                           { xPayload =
                               ( conn
-                              , Vessel.RegistrationSuccessful
+                              , Vessel.RegistrationSuccessful newElmGame
                               )
                           , oPayload =
                               ( oConn
-                              , Vessel.OpponentJoined $ Game.toElm newGame
+                              , Vessel.OpponentJoined newElmGame
                               )
                           }
                         -- }}}
                       Nothing ->
                         -- {{{
-                        OneVessel conn Vessel.RegistrationSuccessful
+                        OneVessel
+                          conn
+                          (Vessel.RegistrationSuccessful newElmGame)
                         -- }}}
                   , newGame
                   )
@@ -332,8 +345,8 @@ updatePoolFrom conn targetCode givenVes pool =
   -- }}}
 
 
-wsHandler :: String -> WS.PendingConnection -> ApiHandler ()
-wsHandler gameCode pendingConn = do
+wsHandler :: WS.PendingConnection -> ApiHandler ()
+wsHandler pendingConn = do
   -- {{{
   appState <- ask
   allGames <- getGames appState
@@ -342,14 +355,13 @@ wsHandler gameCode pendingConn = do
   receivedVessel <- liftIO $ WS.receiveData conn
   --
   let (responseWrappedVessel, newPool) =
-        updatePoolFrom conn gameCode receivedVessel allGames
+        updatePoolFrom conn receivedVessel allGames
   case responseWrappedVessel of
     OneVessel destConn v ->
       liftIO $ WS.sendTextData destConn v
-    TwoVessels (xConn, xV) (oConn, oV) ->
-      liftIO 
-        ( WS.sendTextData xConn xV >> WS.sendTextData oConn oV
-        )
+    TwoVessels (xConn, xV) (oConn, oV) -> do
+      liftIO $ WS.sendTextData xConn xV
+      liftIO $ WS.sendTextData oConn oV
   atomically $ writeTVar (games appState) newPool
   -- liftIO $ sendTextData conn bsFromClient
   -- liftIO . forM_ [1..] $ \i -> do

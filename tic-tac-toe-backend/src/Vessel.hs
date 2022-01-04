@@ -21,8 +21,8 @@ data Vessel
   = Empty
   | GameNotFound
   | GameIsFull
-  | RegistrationRequest    ElmPlayer
-  | RegistrationSuccessful
+  | RegistrationRequest    String ElmPlayer
+  | RegistrationSuccessful ElmGame
   | OpponentJoined         ElmGame
   | Collection            [Vessel]
   deriving (Generic, Show)

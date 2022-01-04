@@ -48,48 +48,59 @@ app.ports.setBackgroundColor.subscribe(function(bgClass) {
 });
 
 
-function connectWS(gameCode) {
+function connectWS() {
   // {{{
   const wsProtocol = protocol === "https" ? "wss" : "ws";
-  const wsHost     = wsProtocol + "//" ++ host;
-  socket = new WebSocket(wsHost + "/play/" + gameCode);
-  console.log("WebSocket to " + gameCode + " is now open.");
+  const wsHost     = wsProtocol + "://" + host;
+  socket = new WebSocket(wsHost + "/play");
+  socket.addEventListener("message", function(msg) {
+    app.ports.vesselReceived.send(JSON.parse(msg.data));
+    console.log(msg);
+  });
+  console.log("WebSocket is now open.");
   // }}}
 }
 
 
-app.ports.openSocket.subscribe(function(gameCode) {
+app.ports.openSocketAndSend.subscribe(function(vessel) {
   // {{{
   if (socket) {
-    if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) {
+    if (    socket.readyState === WebSocket.CONNECTING
+         || socket.readyState === WebSocket.OPEN
+       )
+    {
       socket.close();
     }
     socket = undefined;
-    connectWS(gameCode);
+    connectWS();
   } else {
-    connectWS(gameCode);
+    connectWS();
   }
+  socket.onopen = function() {
+    console.log("VESSEL", vessel);
+    socket.send(JSON.stringify(vessel));
+  };
   // }}}
 });
 
 
-app.ports.closeSocket.subscribe(function() {
-  // {{{
-  try {
-    socket.close();
-  } catch(e) {
-  }
-  socket = undefined;
-  // }}}
-});
+// app.ports.closeSocket.subscribe(function() {
+//   // {{{
+//   try {
+//     socket.close();
+//   } catch(e) {
+//   }
+//   socket = undefined;
+//   // }}}
+// });
 
 
-app.ports.sendThroughSocket.subscribe(function(jsonData) {
-  // {{{
-  try {
-    socket.send(jsonData);
-  } catch(e) {
-  }
-  // }}}
-}
+// app.ports.sendThroughSocket.subscribe(function(jsonData) {
+//   // {{{
+//   try {
+//     socket.send(jsonData);
+//   } catch(e) {
+//   }
+//   // }}}
+// });
 // }}}

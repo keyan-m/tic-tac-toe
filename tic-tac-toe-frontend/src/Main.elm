@@ -20,7 +20,11 @@ import Json.Encode as E
 import Json.Decode as D
 import Json.Decode.Pipeline as D exposing (required, optional)
 import Http
-import Bridge exposing (..)
+-- From Bridge.hs
+import Player exposing (ElmPlayer, ElmPlayers)
+import Game as Game exposing (ElmGame(..))
+import Join as Join
+import Vessel exposing (Vessel)
 -- Decoder format: jsonDec<datatype>
 -- Encoder format: jsonEnc<datatype>
 -- }}}
@@ -66,6 +70,8 @@ flagsDecoder =
   -- {{{
   D.succeed Flags
   |> required "title"    D.string
+  |> required "protocol" D.string
+  |> required "host"     D.string
   |> required "widthPx"  D.int
   |> required "heightPx" D.int
   |> required "darkMode" D.bool
@@ -164,7 +170,8 @@ type Msg
   | HandleNewGameCodeResponse (Result Http.Error ElmGame)
   | CloseServer
   | RequestJoinGame
-  | HandleJoinGameResponse (Result Http.Error MaybeGame)
+  | HandleJoinGameResponse (Result Http.Error Join.ElmResult)
+  | HandleVessel (Result D.Error Vessel)
 
 
 noCmd : Model -> (Model, Cmd Msg)
@@ -345,27 +352,27 @@ update msg model =
           , httpPost
               (UB.absolute ["new"] [])
               (Http.jsonBody (E.string model.gamerTag))
-              (Http.expectString HandleNewGameCodeResponse)
+              (Http.expectJson HandleNewGameCodeResponse Game.jsonDecElmGame)
           ]
       )
       -- }}}
     HandleNewGameCodeResponse res ->
       -- {{{
       case res of
-        Ok (ElmGame info players) ->
+        Ok ((ElmGame info players) as newGame) ->
           ( { model
             | gameCode = info.gameCode
             }
           , Cmd.batch
-              [ openSocket newGameCode
-              -- , giveTimeToMsg <|
-              --     StartFadingInNewPage
-              --       ( GamePage
-              --           ( WaitingForO
-              --               newGameCode
-              --               model.gamerTag
-              --           )
-              --       )
+              [ Vessel.RegistrationRequest
+                  info.gameCode
+                  { elmTag      = model.gamerTag
+                  , isConnected = False
+                  }
+                |> Vessel.jsonEncVessel
+                |> openSocketAndSend
+              , giveTimeToMsg <|
+                  StartFadingInNewPage (GamePage newGame)
               ]
           )
         Err err ->
@@ -399,14 +406,17 @@ update msg model =
       , Cmd.batch
           [ giveTimeToMsg StartFadingOut
           , httpPost
-              (UB.absolute ["join"] [])
-              ( Http.jsonBody <|
-                  jsonEncJoinGameInfo
-                    { oPlayerTag = model.gamerTag
-                    , gameCode   = model.gameCode
-                    }
+              (UB.absolute ["join", model.gameCode] [])
+              ( Player.jsonEncElmPlayer
+                  { elmTag      = model.gamerTag
+                  , isConnected = False
+                  }
+                |> Http.jsonBody
               )
-              (Http.expectJson HandleJoinGameResponse jsonDecMaybeGame)
+              ( Http.expectJson
+                  HandleJoinGameResponse
+                  Join.jsonDecElmResult
+              )
           ]
       )
       -- }}}
@@ -424,25 +434,54 @@ update msg model =
           )
       in
       case res of
-        Ok (Just game) ->
+        Ok (Join.ElmSuccessful game) ->
           ( model
-          , giveTimeToMsg <|
-              StartFadingInNewPage
-                ( GamePage game
-                )
+          , Cmd.batch
+              [ Vessel.RegistrationRequest
+                  model.gameCode
+                  { elmTag      = model.gamerTag
+                  , isConnected = False
+                  }
+                |> Vessel.jsonEncVessel
+                |> openSocketAndSend
+              , giveTimeToMsg <|
+                  StartFadingInNewPage
+                    ( GamePage game
+                    )
+              ]
           )
-        Ok Nothing ->
-          failure "Couldn't join..."
+        Ok (Join.ElmFailed errStr) ->
+          failure errStr
         Err err ->
           failure (httpErrorToString err)
+      -- }}}
+    HandleVessel res ->
+      -- {{{
+      case res of
+        Ok vessel ->
+          case vessel of
+            Vessel.RegistrationSuccessful newGame ->
+              { model
+              | programView = PageView (GamePage newGame)
+              }
+              |> noCmd
+            Vessel.OpponentJoined newGame ->
+              { model
+              | programView = PageView (GamePage newGame)
+              }
+              |> noCmd
+            _ ->
+              noCmd model
+        Err _ ->
+          noCmd model -- TODO
       -- }}}
   -- }}}
 
 
 port setBackgroundColor : String  -> Cmd msg
-port openSocket         : ()      -> Cmd msg
-port closeSocket        : ()      -> Cmd msg
-port sendThroughSocket  : E.Value -> Cmd msg
+port openSocketAndSend  : E.Value -> Cmd msg
+-- port closeSocket        : ()      -> Cmd msg
+-- port sendThroughSocket  : E.Value -> Cmd msg
 -- }}}
 
 
@@ -683,10 +722,12 @@ viewLandingPage colorScheme fadingOut gamerTag gameCode landingPrompt =
     ]
   -- }}}
 
-viewGamePage : ColorScheme -> Bool -> Game -> Html Msg
-viewGamePage colorScheme fadingOut game =
+viewGamePage : ColorScheme -> Bool -> ElmGame -> Html Msg
+viewGamePage colorScheme fadingOut (ElmGame info ps) =
   -- {{{
   let
+    mXP  = ps.xElmPlayer
+    mOP  = ps.oElmPlayer
     wrap =
       -- {{{
       H.div
@@ -702,34 +743,56 @@ viewGamePage colorScheme fadingOut game =
               "opacity-100 scale-100"
         ]
       -- }}}
-  in
-  case game of
-    WaitingForO gameCode gamerTag ->
+    waitingForOpponent _ =
       -- {{{
       wrap
         [ H.div
-            [ HA.class "text-2xl max-w-md text-center pb-8 px-8"
-            ]
-            [ H.text "Get ready "
-            , H.strong [HA.class "whitespace-nowrap"] [H.text gamerTag]
-            , H.text "! Your friend can join with this code:"
-            ]
+            [ HA.class "text-center font-xl"
+            ] [H.text "Your game's code is:"]
         , H.div
-            [ HA.class "text-4xl font-bold"
-            ] [H.text gameCode]
-        , H.form
-            [ HE.onSubmit CloseServer
-            , HA.class "pt-8"
-            ]
-            [ viewFormButton colorScheme "Cancel"
-            ]
+            [ HA.class "text-center font-bold text-2xl"
+            ] [H.text info.gameCode]
+        , H.div
+            [ HA.class "text-center font-xl pt-4"
+            ] [H.text "Waiting for opponent..."]
         ]
       -- }}}
-    Game gameInfo ->
+    connText isConned =
+      H.text <|
+           " ("
+        ++ ( if isConned then
+               "connected"
+             else
+               "not connected"
+           )
+        ++ ")"
+  in
+  case (mXP, mOP) of
+    (Nothing, Nothing) ->
       wrap
-        [ H.div [HA.class "text-center font-bold text-2xl"] [H.text gameInfo.xPlayerTag]
+        [ H.div
+            [ HA.class "text-center font-bold text-2xl"
+            ] [H.text "Something went wrong..."]
+        ]
+    (Just _, Nothing) ->
+      waitingForOpponent ()
+    (Nothing, Just _) ->
+      waitingForOpponent ()
+    (Just xP, Just oP) ->
+      wrap
+        [ H.div
+            [ HA.class "text-center font-bold text-2xl"
+            ]
+            [ H.text   xP.elmTag
+            , connText xP.isConnected
+            ]
         , H.div [HA.class "text-center text-xl"] [H.text "vs"]
-        , H.div [HA.class "text-center font-bold text-2xl"] [H.text gameInfo.oPlayerTag]
+        , H.div
+            [ HA.class "text-center font-bold text-2xl"
+            ]
+            [ H.text   oP.elmTag
+            , connText oP.isConnected
+            ]
         ]
   -- }}}
 
@@ -820,8 +883,6 @@ view model =
           fromFadeAndPage OutFade page
         FadingIn _ page ->
           fromFadeAndPage InFade page
-        _ ->
-          wrapper []
   }
   -- }}}
 -- }}}
@@ -831,8 +892,13 @@ view model =
 subscriptions : Model -> Sub Msg
 subscriptions model =
   -- {{{
-  BE.onResize SetViewportDimensions
+  Sub.batch
+    [ BE.onResize SetViewportDimensions
+    , vesselReceived (HandleVessel << D.decodeValue Vessel.jsonDecVessel)
+    ]
   -- }}}
+
+port vesselReceived : (E.Value -> msg) -> Sub msg
 -- }}}
 
 
