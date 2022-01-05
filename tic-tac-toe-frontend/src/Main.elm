@@ -460,19 +460,31 @@ update msg model =
       -- {{{
       case res of
         Ok vessel ->
-          case vessel of
-            Vessel.RegistrationSuccessful newGame ->
+          let
+            pV = model.programView
+            newPage =
+              case vessel of
+                Vessel.RegistrationSuccessful newGame ->
+                  GamePage newGame
+                Vessel.OpponentJoined newGame ->
+                  GamePage newGame
+                _ ->
+                  getCurrentPage pV
+          in
+          case model.programView of
+            PageView              _ ->
               { model
-              | programView = PageView (GamePage newGame)
+              | programView = PageView newPage
               }
               |> noCmd
-            Vessel.OpponentJoined newGame ->
-              { model
-              | programView = PageView (GamePage newGame)
-              }
-              |> noCmd
-            _ ->
-              noCmd model
+            FadingOut fadeStarted _ ->
+              ( model
+              , giveTimeToMsg (StartFadingInNewPage newPage)
+              )
+            FadingIn  fadeStarted _ ->
+              ( model
+              , giveTimeToMsg (PutUpNewPage newPage)
+              )
         Err _ ->
           noCmd model -- TODO
       -- }}}
