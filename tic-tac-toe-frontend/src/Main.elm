@@ -304,6 +304,13 @@ update msg model =
             )
             -- }}}
           -- }}}
+        FadingIn startOfFade _ ->
+          -- {{{
+          { model
+          | programView = FadingIn startOfFade newPage
+          }
+          |> noCmd
+          -- }}}
         _ ->
           -- {{{
           { model
@@ -634,6 +641,7 @@ viewLandingPage colorScheme fadingOut gamerTag gameCode landingPrompt =
         ]
         [ H.button
             [ HA.class origin
+            , HA.class duration
             , HA.class "cursor-pointer transform p-4 peer"
             , HA.class "transition-transform-opacity"
             , HA.class "flex items-center justify-center"
@@ -760,21 +768,70 @@ viewGamePage colorScheme fadingOut (ElmGame info ps) =
               "opacity-100 scale-100"
         ]
       -- }}}
-    waitingForOpponent _ =
+    waitingForOpponent waitingForO theP =
       -- {{{
-      wrap
-        [ H.div
-            [ HA.class "text-center font-xl"
-            ] [H.text "Your game's code is:"]
-        , H.div
-            [ HA.class "text-center font-bold text-2xl"
-            ] [H.text info.gameCode]
-        , H.div
-            [ HA.class "text-center font-xl py-4"
+      let
+        regdUser =
+          -- {{{
+          let
+            lbl =
+              if theP.isConnected then
+                theP.elmTag
+              else
+                theP.elmTag ++ " (connecting...)"
+          in
+          H.div
+            [ HA.class "font-bold"
+            ]
+            [H.text lbl]
+          -- }}}
+        openSlot =
+          -- {{{
+          H.div
+            [ HA.class "opacity-50"
             ] [H.text "Waiting for opponent..."]
-        , H.button
-            (HE.onClick CloseServer :: buttonAttrs colorScheme)
-            [H.text "Close"]
+          -- }}}
+        playersBar =
+          -- {{{
+          let
+            wrappingDiv =
+              -- {{{
+              H.div
+                [ HA.class "flex flex-row w-full h-16"
+                ]
+              -- }}}
+            midElem =
+              -- {{{
+              H.div [HA.class "h-full max-w-full flex-grow"] []
+              -- }}}
+            rowElems = [regdUser, midElem, openSlot]
+          in
+          if waitingForO then
+            wrappingDiv rowElems
+          else
+            wrappingDiv (List.reverse rowElems)
+          -- }}}
+      in
+      H.div
+        [ HA.class "w-full h-full relative flex-grow"
+        , HA.class "flex flex-col items-stretch font-mono"
+        , HA.class colorScheme.txt
+        ]
+        [ playersBar
+        , H.div
+            [ HA.class "flex flex-col flex-grow"
+            , HA.class "items-center justify-center"
+            ]
+            [ H.div
+                [ HA.class "text-center font-xl"
+                ] [H.text "Your opponent can join with:"]
+            , H.div
+                [ HA.class "text-center font-bold text-2xl py-4"
+                ] [H.text info.gameCode]
+            , H.button
+                (HE.onClick CloseServer :: buttonAttrs colorScheme)
+                [H.text "Close"]
+            ]
         ]
       -- }}}
     connText isConned =
@@ -794,10 +851,12 @@ viewGamePage colorScheme fadingOut (ElmGame info ps) =
             [ HA.class "text-center font-bold text-2xl"
             ] [H.text "Something went wrong..."]
         ]
-    (Just _, Nothing) ->
-      waitingForOpponent ()
-    (Nothing, Just _) ->
-      waitingForOpponent ()
+    (Just xP, Nothing) ->
+      wrap
+        [ waitingForOpponent True xP
+        ]
+    (Nothing, Just oP) ->
+      wrap [waitingForOpponent False oP]
     (Just xP, Just oP) ->
       wrap
         [ H.div

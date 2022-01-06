@@ -371,23 +371,14 @@ wsHandler pendingConn = do
   liftIO $ WS.withPingThread conn 10 (putStrLn "testing") $ do
     forever $ do
       receivedVessel <- liftIO $ WS.receiveData conn
-      --
+      -- can throw ConnectionClosed ^---------^
       let (responseWrappedVessel, newPool) =
             updatePoolFrom conn receivedVessel allGames
       case responseWrappedVessel of
         OneVessel destConn v ->
           liftIO $ WS.sendTextData destConn v
         TwoVessels (xConn, xV) (oConn, oV) -> do
-          liftIO $ WS.withPingThread
-            xConn
-            1
-            (trace "Pinging X." $ putStrLn "Pinging X.")
-            (WS.sendTextData xConn xV)
-          liftIO $ WS.withPingThread
-            oConn
-            1
-            (trace "Pinging O." $ putStrLn "Pinging O.")
-            (WS.sendTextData oConn oV)
+          liftIO (WS.sendTextData xConn xV >> WS.sendTextData oConn oV)
       atomically $ writeTVar (games appState) newPool
   -- liftIO $ sendTextData conn bsFromClient
   -- liftIO . forM_ [1..] $ \i -> do
