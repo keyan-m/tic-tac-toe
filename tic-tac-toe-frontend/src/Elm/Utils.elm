@@ -78,17 +78,29 @@ svgDefs =
   -- }}}
 
 
-view128pxSvg : String -> Html msg
-view128pxSvg svgID =
+viewSquareSvg : String -> String -> Html msg
+viewSquareSvg edgeSize svgID =
   -- {{{
   Svg.svg
-    [ SA.width  "128px"
-    , SA.height "128px"
+    [ SA.width  edgeSize
+    , SA.height edgeSize
     , SA.class duration
     , SA.class "block fill-current"
     ]
     [ Svg.use [SA.xlinkHref svgID] [] 
     ]
+  -- }}}
+
+view64pxSvg : String -> Html msg
+view64pxSvg =
+  -- {{{
+  viewSquareSvg "64px"
+  -- }}}
+
+view128pxSvg : String -> Html msg
+view128pxSvg =
+  -- {{{
+  viewSquareSvg "128px"
   -- }}}
 
 viewX : Html msg
@@ -97,11 +109,18 @@ viewX = view128pxSvg "#icon-x"
 viewO : Html msg
 viewO = view128pxSvg "#icon-o"
 
+viewGameX : Html msg
+viewGameX = view64pxSvg "#icon-x"
+
+viewGameO : Html msg
+viewGameO = view64pxSvg "#icon-o"
+
 
 type alias ColorScheme =
   { bg         : String
   , txt        : String
   , grey       : String
+  , bgInv      : String
   , btnBg      : String
   , btnTxt     : String
   , inputBg    : String
@@ -116,6 +135,7 @@ makeColorScheme seed =
       { bg         = "bg-slate-700"
       , txt        = "text-slate-200"
       , grey       = "bg-slate-500"
+      , bgInv      = "bg-slate-200"
       , btnBg      = "hover:bg-slate-300 bg-slate-400 active:bg-slate-500"
       , btnTxt     = "text-slate-900 active:text-slate-300"
       , inputBg    = "bg-slate-100"
@@ -128,6 +148,7 @@ makeColorScheme seed =
       { bg         = "bg-stone-700"
       , txt        = "text-stone-200"
       , grey       = "bg-stone-500"
+      , bgInv      = "bg-stone-200"
       , btnBg      = "hover:bg-stone-300 bg-stone-400 active:bg-stone-500"
       , btnTxt     = "text-stone-900 active:text-stone-300"
       , inputBg    = "bg-stone-100"
@@ -140,6 +161,7 @@ makeColorScheme seed =
       { bg         = "bg-amber-700"
       , txt        = "text-amber-200"
       , grey       = "bg-amber-500"
+      , bgInv      = "bg-amber-200"
       , btnBg      = "hover:bg-amber-300 bg-amber-400 active:bg-amber-500"
       , btnTxt     = "text-amber-900 active:text-amber-300"
       , inputBg    = "bg-amber-100"
@@ -152,6 +174,7 @@ makeColorScheme seed =
       { bg         = "bg-lime-700"
       , txt        = "text-lime-200"
       , grey       = "bg-lime-500"
+      , bgInv      = "bg-lime-200"
       , btnBg      = "hover:bg-lime-300 bg-lime-400 active:bg-lime-500"
       , btnTxt     = "text-lime-900 active:text-lime-300"
       , inputBg    = "bg-lime-100"
@@ -164,6 +187,7 @@ makeColorScheme seed =
       { bg         = "bg-teal-700"
       , txt        = "text-teal-200"
       , grey       = "bg-teal-500"
+      , bgInv      = "bg-teal-200"
       , btnBg      = "hover:bg-teal-300 bg-teal-400 active:bg-teal-500"
       , btnTxt     = "text-teal-900 active:text-teal-300"
       , inputBg    = "bg-teal-100"
@@ -176,6 +200,7 @@ makeColorScheme seed =
       { bg         = "bg-sky-700"
       , txt        = "text-sky-200"
       , grey       = "bg-sky-500"
+      , bgInv      = "bg-sky-200"
       , btnBg      = "hover:bg-sky-300 bg-sky-400 active:bg-sky-500"
       , btnTxt     = "text-sky-900 active:text-sky-300"
       , inputBg    = "bg-sky-100"
@@ -188,6 +213,7 @@ makeColorScheme seed =
       { bg         = "bg-indigo-700"
       , txt        = "text-indigo-200"
       , grey       = "bg-indigo-500"
+      , bgInv      = "bg-indogo-200"
       , btnBg      = "hover:bg-indigo-300 bg-indigo-400 active:bg-indigo-500"
       , btnTxt     = "text-indigo-900 active:text-indigo-300"
       , inputBg    = "bg-indigo-100"
@@ -200,6 +226,7 @@ makeColorScheme seed =
       { bg         = "bg-purple-700"
       , txt        = "text-purple-200"
       , grey       = "bg-purple-500"
+      , bgInv      = "bg-purple-200"
       , btnBg      = "hover:bg-purple-300 bg-purple-400 active:bg-purple-500"
       , btnTxt     = "text-purple-900 active:text-purple-300"
       , inputBg    = "bg-purple-100"
@@ -212,6 +239,7 @@ makeColorScheme seed =
       { bg         = "bg-pink-700"
       , txt        = "text-pink-200"
       , grey       = "bg-pink-500"
+      , bgInv      = "bg-pink-200"
       , btnBg      = "hover:bg-pink-300 bg-pink-400 active:bg-pink-500"
       , btnTxt     = "text-pink-900 active:text-pink-300"
       , inputBg    = "bg-pink-100"

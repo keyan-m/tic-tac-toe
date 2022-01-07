@@ -310,6 +310,7 @@ update msg model =
           | programView = FadingIn startOfFade newPage
           }
           |> noCmd
+          -- no command should be necessary.
           -- }}}
         _ ->
           -- {{{
@@ -337,13 +338,21 @@ update msg model =
           else
             -- {{{
             ( model
-            , updateAfter
+            , runCmdAfter
                 (durationMillis - millisElapsed)
-                (PutUpNewPage newPage (startOfFade + durationMillis))
+                (giveTimeToMsg (PutUpNewPage newPage))
             )
             -- }}}
           -- }}}
-        _ ->
+        FadingOut startOfFade page ->
+          -- {{{
+          { model
+          | programView = FadingOut startOfFade newPage
+          }
+          |> noCmd
+          -- no command should be necessary.
+          -- }}}
+        PageView _ ->
           -- {{{
           { model
           | programView = PageView newPage
@@ -542,7 +551,7 @@ viewInput colorScheme id lbl val msg =
   -- }}}
 
 
-buttonAttrs colorScheme =
+buttonAttrs colorScheme autoMargin =
   [ HA.class "flex items-center justify-center"
   , HA.class "py-2 px-8 font-mono rounded-lg text-center"
   , HA.class "shadow active:shadow-sm"
@@ -550,13 +559,16 @@ buttonAttrs colorScheme =
   , HA.class colorScheme.btnTxt
   , HA.class duration
   , HA.class "transition-colors select-none"
+  , HA.classList
+      [ ("md:m-auto", autoMargin)
+      ]
   ]
 
 viewFormButton : ColorScheme -> String -> Html msg
 viewFormButton colorScheme lbl =
   -- {{{
   H.button
-    ( HA.type_ "submit" :: buttonAttrs colorScheme
+    ( HA.type_ "submit" :: buttonAttrs colorScheme False
     ) [H.text lbl]
   -- }}}
 
@@ -747,12 +759,97 @@ viewLandingPage colorScheme fadingOut gamerTag gameCode landingPrompt =
     ]
   -- }}}
 
-viewGamePage : ColorScheme -> Bool -> ElmGame -> Html Msg
-viewGamePage colorScheme fadingOut (ElmGame info ps) =
+viewGamePage : ColorScheme -> Bool -> String -> ElmGame -> Html Msg
+viewGamePage colorScheme fadingOut gamerTag (ElmGame info ps) =
   -- {{{
   let
     mXP  = ps.xElmPlayer
     mOP  = ps.oElmPlayer
+    openSlot _ =
+      -- {{{
+      H.div
+        [ HA.class "opacity-50"
+        ] [H.text "Waiting for opponent..."]
+      -- }}}
+    playerTitle theP =
+      -- {{{
+      let
+        lbl =
+          if theP.isConnected then
+            theP.elmTag
+          else
+            theP.elmTag ++ " (connecting...)"
+      in
+      H.div
+        [ HA.class "font-bold"
+        ]
+        [H.text lbl]
+      -- }}}
+    playersBar leftPlayer rightPlayer =
+      -- {{{
+      let
+        wrappingDiv =
+          -- {{{
+          H.div
+            [ HA.class "flex flex-row w-full h-16"
+            , HA.class "items-center justify-between"
+            ]
+          -- }}}
+        midElem =
+          -- {{{
+          H.div [HA.class "h-full max-w-full flex-grow"] []
+          -- }}}
+        rowElems = [leftPlayer, midElem, rightPlayer]
+      in
+      wrappingDiv rowElems
+      -- }}}
+    leaveButton lbl =
+      -- {{{
+      H.button
+        (HE.onClick CloseServer :: buttonAttrs colorScheme True)
+        [H.text lbl]
+      -- }}}
+    theGameBoard renderedPlayersBar mPlayground =
+      -- {{{
+      let
+        (mainContent, buttonLabel) =
+          -- {{{
+          case mPlayground of
+            Nothing ->
+              -- {{{
+              ( H.div
+                  [ HA.class "flex flex-col flex-grow"
+                  , HA.class "items-center justify-center"
+                  ]
+                  [ H.div
+                      [ HA.class "text-center font-xl"
+                      ] [H.text "Your opponent can join with:"]
+                  , H.div
+                      [ HA.class "text-center font-bold text-2xl py-4"
+                      ] [H.text info.gameCode]
+                  ]
+              , "Close"
+              )
+              -- }}}
+            Just (forXPlayer, pg) ->
+              -- {{{
+              ( viewPlayground colorScheme forXPlayer pg
+              , "Leave"
+              )
+              -- }}}
+          -- }}}
+      in
+      H.div
+        [ HA.class "w-full h-full relative flex-grow pt-24 md:pt-0"
+        , HA.class "flex flex-col items-stretch font-mono"
+        , HA.class "justify-stretch"
+        , HA.class colorScheme.txt
+        ]
+        [ renderedPlayersBar
+        , mainContent
+        , leaveButton buttonLabel
+        ]
+      -- }}}
     wrap =
       -- {{{
       H.div
@@ -768,111 +865,117 @@ viewGamePage colorScheme fadingOut (ElmGame info ps) =
               "opacity-100 scale-100"
         ]
       -- }}}
-    waitingForOpponent waitingForO theP =
-      -- {{{
-      let
-        regdUser =
-          -- {{{
-          let
-            lbl =
-              if theP.isConnected then
-                theP.elmTag
-              else
-                theP.elmTag ++ " (connecting...)"
-          in
-          H.div
-            [ HA.class "font-bold"
-            ]
-            [H.text lbl]
-          -- }}}
-        openSlot =
-          -- {{{
-          H.div
-            [ HA.class "opacity-50"
-            ] [H.text "Waiting for opponent..."]
-          -- }}}
-        playersBar =
-          -- {{{
-          let
-            wrappingDiv =
-              -- {{{
-              H.div
-                [ HA.class "flex flex-row w-full h-16"
-                ]
-              -- }}}
-            midElem =
-              -- {{{
-              H.div [HA.class "h-full max-w-full flex-grow"] []
-              -- }}}
-            rowElems = [regdUser, midElem, openSlot]
-          in
-          if waitingForO then
-            wrappingDiv rowElems
-          else
-            wrappingDiv (List.reverse rowElems)
-          -- }}}
-      in
-      H.div
-        [ HA.class "w-full h-full relative flex-grow"
-        , HA.class "flex flex-col items-stretch font-mono"
-        , HA.class colorScheme.txt
-        ]
-        [ playersBar
-        , H.div
-            [ HA.class "flex flex-col flex-grow"
-            , HA.class "items-center justify-center"
-            ]
-            [ H.div
-                [ HA.class "text-center font-xl"
-                ] [H.text "Your opponent can join with:"]
-            , H.div
-                [ HA.class "text-center font-bold text-2xl py-4"
-                ] [H.text info.gameCode]
-            , H.button
-                (HE.onClick CloseServer :: buttonAttrs colorScheme)
-                [H.text "Close"]
-            ]
-        ]
-      -- }}}
-    connText isConned =
-      H.text <|
-           " ("
-        ++ ( if isConned then
-               "connected"
-             else
-               "not connected"
-           )
-        ++ ")"
   in
   case (mXP, mOP) of
     (Nothing, Nothing) ->
+      -- {{{
       wrap
         [ H.div
             [ HA.class "text-center font-bold text-2xl"
             ] [H.text "Something went wrong..."]
         ]
+      -- }}}
     (Just xP, Nothing) ->
+      -- {{{
       wrap
-        [ waitingForOpponent True xP
+        [ theGameBoard
+            (playersBar (playerTitle xP) (openSlot ()))
+            Nothing
         ]
+      -- }}}
     (Nothing, Just oP) ->
-      wrap [waitingForOpponent False oP]
-    (Just xP, Just oP) ->
+      -- {{{
       wrap
-        [ H.div
-            [ HA.class "text-center font-bold text-2xl"
-            ]
-            [ H.text   xP.elmTag
-            , connText xP.isConnected
-            ]
-        , H.div [HA.class "text-center text-xl"] [H.text "vs"]
-        , H.div
-            [ HA.class "text-center font-bold text-2xl"
-            ]
-            [ H.text   oP.elmTag
-            , connText oP.isConnected
-            ]
+        [ theGameBoard
+            (playersBar (openSlot ()) (playerTitle oP))
+            Nothing
         ]
+      -- }}}
+    (Just xP, Just oP) ->
+      -- {{{
+      let
+        xTag = xP.elmTag
+        isXPlayer = xTag == gamerTag
+      in
+      wrap
+        [ theGameBoard
+            (playersBar (playerTitle xP) (playerTitle oP))
+            (Just (isXPlayer, info.playground))
+        ]
+      -- }}}
+  -- }}}
+
+viewPlayground : ColorScheme -> Bool -> Game.Playground -> Html Msg
+viewPlayground colorScheme xPlayer pg =
+  -- {{{
+  let
+    slotViewer = viewSlot colorScheme xPlayer
+  in
+  H.div
+    [ HA.class "rounded-lg p-px flex items-center justify-center"
+    , HA.class "flex-grow"
+    , HA.class colorScheme.bgInv
+    ]
+    [ H.div
+        [ HA.class "grid-cols-3 grid-rows-3 gap-px"
+        , HA.class "grid grid-flow-row"
+        ]
+        [ slotViewer pg.slot00, slotViewer pg.slot01, slotViewer pg.slot02
+        , slotViewer pg.slot10, slotViewer pg.slot11, slotViewer pg.slot12
+        , slotViewer pg.slot20, slotViewer pg.slot21, slotViewer pg.slot22
+        ]
+    ]
+  -- }}}
+
+viewSlot : ColorScheme -> Bool -> Maybe (Int, Game.Mark) -> Html Msg
+viewSlot colorScheme xPlayer mSlot =
+  -- {{{
+  let
+    theSlot =
+      -- {{{
+      let
+        commonAttrs =
+          -- {{{
+          [ HA.class "p-4 cursor-pointer h-full w-full"
+          , HA.class "flex items-center justify-center group"
+          ]
+          -- }}}
+        theMark =
+          -- {{{
+          if xPlayer then
+            viewGameX
+          else
+            viewGameO
+          -- }}}
+      in
+      case mSlot of
+        Just (_, mark) ->
+          -- {{{
+          H.div
+            commonAttrs
+            [ theMark
+            ]
+          -- }}}
+        Nothing ->
+          -- {{{
+          H.div
+            (    HA.class "hover:opacity-50 opacity-0"
+              :: HA.class duration
+              :: HA.class "transition-opacity"
+              :: commonAttrs
+            )
+            [ theMark
+            ]
+          -- }}}
+      -- }}}
+  in
+  H.div
+    [ HA.class "h-24 w-24 relative rounded-md"
+    , HA.class "transition-colors"
+    , HA.class duration
+    , HA.class colorScheme.btnBg
+    , HA.class colorScheme.btnTxt
+    ] [theSlot]
   -- }}}
 
 viewPage : ColorScheme
@@ -919,6 +1022,7 @@ viewPage colorScheme fadeState pageHeight gamerTag gameCode page =
           viewGamePage
             colorScheme
             fadingOut
+            gamerTag
             game
     ]
   -- }}}
