@@ -114,6 +114,17 @@ case $1 in
     closeServer
     ;;
     # }}}
+  copyBack)
+    # {{{
+    closeServer
+
+    echo -e "/-------------------------------- hlint --------------------------------\\"
+    hlint $project-backend/src
+    echo -e "\-------------------------------- hlint --------------------------------/\n"
+
+    copyBackend
+    ;;
+    # }}}
   copyConfigs)
     # {{{
     copyConfig webpack.*.js
@@ -129,6 +140,7 @@ case $1 in
     echo -e "  • Build the frontend:\t\t\tnpm <script command>"
     echo -e "  • Start the server:\t\t\tstart (optionally add \`npmStart\` to also build the frontend)"
     echo -e "  • Close the server:\t\t\tclose"
+    echo -e "  • Copy backend files:\t\t\tcopyBack"
     echo -e "  • Copy config files from server:\tcopyConfigs\n"
     ;;
     # }}}

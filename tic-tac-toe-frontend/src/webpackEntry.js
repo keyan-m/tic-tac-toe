@@ -62,7 +62,7 @@ function connectWS() {
 }
 
 
-app.ports.openSocketAndSend.subscribe(function(vessel) {
+app.ports.openSocketAndSend.subscribe(function(dataForSocket) {
   // {{{
   if (socket) {
     if (    socket.readyState === WebSocket.CONNECTING
@@ -77,8 +77,10 @@ app.ports.openSocketAndSend.subscribe(function(vessel) {
     connectWS();
   }
   socket.onopen = function() {
-    console.log("VESSEL", vessel);
-    socket.send(JSON.stringify(vessel));
+    socket.send(JSON.stringify(dataForSocket.vesselOnOpen));
+  };
+  socket.onclose = function() {
+    socket.send(JSON.stringify(dataForSocket.vesselOnClose));
   };
   // }}}
 });
@@ -95,12 +97,12 @@ app.ports.closeSocket.subscribe(function() {
 });
 
 
-// app.ports.sendThroughSocket.subscribe(function(jsonData) {
-//   // {{{
-//   try {
-//     socket.send(jsonData);
-//   } catch(e) {
-//   }
-//   // }}}
-// });
+app.ports.sendThroughSocket.subscribe(function(jsonData) {
+  // {{{
+  try {
+    socket.send(JSON.stringify(jsonData));
+  } catch(e) {
+  }
+  // }}}
+});
 // }}}

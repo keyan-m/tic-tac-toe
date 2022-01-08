@@ -171,6 +171,7 @@ type Msg
   | CloseServer
   | RequestJoinGame
   | HandleJoinGameResponse (Result Http.Error Join.ElmResult)
+  | SendVessel Vessel
   | HandleVessel (Result D.Error Vessel)
 
 
@@ -376,17 +377,14 @@ update msg model =
       -- {{{
       case res of
         Ok ((ElmGame info players) as newGame) ->
+          let
+            gCode = info.gameCode
+          in
           ( { model
-            | gameCode = info.gameCode
+            | gameCode = gCode
             }
           , Cmd.batch
-              [ Vessel.RegistrationRequest
-                  info.gameCode
-                  { elmTag      = model.gamerTag
-                  , isConnected = False
-                  }
-                |> Vessel.jsonEncVessel
-                |> openSocketAndSend
+              [ initSocketCmd gCode model.gamerTag
               , giveTimeToMsg <|
                   StartFadingInNewPage (GamePage newGame)
               ]
@@ -454,13 +452,7 @@ update msg model =
         Ok (Join.ElmSuccessful game) ->
           ( model
           , Cmd.batch
-              [ Vessel.RegistrationRequest
-                  model.gameCode
-                  { elmTag      = model.gamerTag
-                  , isConnected = False
-                  }
-                |> Vessel.jsonEncVessel
-                |> openSocketAndSend
+              [ initSocketCmd model.gameCode model.gamerTag
               , giveTimeToMsg <|
                   StartFadingInNewPage
                     ( GamePage game
@@ -471,6 +463,12 @@ update msg model =
           failure errStr
         Err err ->
           failure (httpErrorToString err)
+      -- }}}
+    SendVessel vessel ->
+      -- {{{
+      ( model
+      , sendThroughSocket (Vessel.jsonEncVessel vessel)
+      )
       -- }}}
     HandleVessel res ->
       -- {{{
@@ -483,6 +481,8 @@ update msg model =
                 Vessel.RegistrationSuccessful newGame ->
                   GamePage newGame
                 Vessel.OpponentJoined newGame ->
+                  GamePage newGame
+                Vessel.GameStateUpdate newGame ->
                   GamePage newGame
                 _ ->
                   getCurrentPage pV
@@ -507,10 +507,48 @@ update msg model =
   -- }}}
 
 
+type alias DataForSocket =
+  { vesselOnClose : Vessel
+  , vesselOnOpen  : Vessel
+  }
+dataForSocketToJSON : DataForSocket -> E.Value
+dataForSocketToJSON dfs =
+  -- {{{
+  E.object
+    [ ("vesselOnClose", Vessel.jsonEncVessel dfs.vesselOnClose)
+    , ("vesselOnOpen" , Vessel.jsonEncVessel dfs.vesselOnOpen)
+    ]
+  -- }}}
+dataForSocketDecoder : D.Decoder DataForSocket
+dataForSocketDecoder =
+  -- {{{
+  D.succeed DataForSocket
+  |> required "vesselOnClose" Vessel.jsonDecVessel
+  |> required "vesselOnOpen"  Vessel.jsonDecVessel
+  -- }}}
+
+
+initSocketCmd : String -> String -> Cmd Msg
+initSocketCmd gCode gTag =
+  -- {{{
+  let
+    elmP  =
+      { elmTag      = gTag
+      , isConnected = False
+      }
+  in
+  { vesselOnClose = Vessel.PlayerLeaving gCode elmP
+  , vesselOnOpen  = Vessel.RegistrationRequest gCode elmP
+  }
+  |> dataForSocketToJSON
+  |> openSocketAndSend
+  -- }}}
+
+
 port setBackgroundColor : String  -> Cmd msg
 port openSocketAndSend  : E.Value -> Cmd msg
 port closeSocket        : ()      -> Cmd msg
--- port sendThroughSocket  : E.Value -> Cmd msg
+port sendThroughSocket  : E.Value -> Cmd msg
 -- }}}
 
 
@@ -1078,6 +1116,16 @@ subscriptions model =
   Sub.batch
     [ BE.onResize SetViewportDimensions
     , vesselReceived (HandleVessel << D.decodeValue Vessel.jsonDecVessel)
+    , case getCurrentPage model.programView of
+        LandingPage _ ->
+          Sub.none
+        GamePage (ElmGame info players) ->
+          Time.every
+            (if bothPlayersAreConnected players then 5000 else 1000)
+            ( Vessel.GameStateRequest info.gameCode model.gamerTag
+              |> SendVessel
+              |> always
+            )
     ]
   -- }}}
 
@@ -1136,5 +1184,15 @@ httpPost url body expect =
     , timeout = Just timeoutMillis
     , tracker = Nothing
     }
+  -- }}}
+
+bothPlayersAreConnected : ElmPlayers -> Bool
+bothPlayersAreConnected players =
+  -- {{{
+  case (players.xElmPlayer, players.oElmPlayer) of
+    (Just xP, Just oP) ->
+      xP.isConnected && oP.isConnected
+    _ ->
+      False
   -- }}}
 -- }}}

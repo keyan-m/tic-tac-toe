@@ -24,8 +24,12 @@ data Vessel
   | InvalidRequest
   | RegistrationRequest    String ElmPlayer
   | RegistrationSuccessful ElmGame
+  | PlayerLeaving          String ElmPlayer
+  | GameStateRequest       String String
+  | OpponentLeft
   | OpponentJoined         ElmGame
   | Collection            [Vessel]
+  | GameStateUpdate        ElmGame
   deriving (Generic, Show)
 
 deriveBoth defaultOptions ''Vessel
