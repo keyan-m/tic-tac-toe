@@ -80,7 +80,8 @@ app.ports.openSocketAndSend.subscribe(function(dataForSocket) {
     socket.send(JSON.stringify(dataForSocket.vesselOnOpen));
   };
   socket.onclose = function() {
-    socket.send(JSON.stringify(dataForSocket.vesselOnClose));
+    app.ports.connectionLost.send(true);
+    // socket.send(JSON.stringify(dataForSocket.vesselOnClose));
   };
   // }}}
 });
@@ -100,7 +101,13 @@ app.ports.closeSocket.subscribe(function() {
 app.ports.sendThroughSocket.subscribe(function(jsonData) {
   // {{{
   try {
-    socket.send(JSON.stringify(jsonData));
+    if (    socket.readyState === WebSocket.CLOSING
+         || socket.readyState === WebSocket.CLOSED
+       )
+    {
+    } else {
+      socket.send(JSON.stringify(jsonData));
+    }
   } catch(e) {
   }
   // }}}

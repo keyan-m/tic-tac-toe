@@ -54,6 +54,7 @@ import Lucid.Html5
 import Servant.HTML.Lucid
 import Servant.API.WebSocket
   ( WebSocketPending
+  , WebSocket
   )
 import RandomCode
 import Game (Game (..), ElmGame (..))
@@ -88,6 +89,7 @@ type Api
   --
   ---- Endpoint for WebSocket -------------------------------------- v
   :<|> "play"  :> WebSocketPending
+  -- :<|> "play"  :> WebSocket
   ------------------------------------------------------------------ ^
   --
   ---- Endpoint for serving static files --------------------------- v
@@ -117,6 +119,12 @@ initApp = do
 
 getGames :: AppState -> ApiHandler [Game]
 getGames appState = do
+  -- {{{
+  readTVarIO $ games appState
+  -- }}}
+
+getGamesIO :: AppState -> IO [Game]
+getGamesIO appState = do
   -- {{{
   readTVarIO $ games appState
   -- }}}
@@ -272,111 +280,111 @@ updatePoolFrom conn givenVes pool =
       go
         targetCode
         ( \g@(Game info players@Players {xPlayer = mXP, oPlayer = mOP}) ->
-              let
-                newGameFromNewPlayer newIsX newP =
-                  -- {{{
-                  let
-                    newPs =
-                      if newIsX then
-                        players {Player.xPlayer = newP}
-                      else
-                        players {Player.oPlayer = newP}
-                  in
-                  Game info newPs
-                  -- }}}
-                onlyOne forX theP =
-                  -- {{{
-                  if   (Player.conn theP & isJust)
-                    || (Player.tag theP /= playerTag)
-                  then
-                    ( OneVessel conn Vessel.InvalidRequest
-                    , g
-                    )
-                  else
-                    let
-                      newP = Just $ Player playerTag (Just conn)
-                      newGame = newGameFromNewPlayer forX newP
-                      newElmGame = Game.toElm newGame
-                    in
-                    ( trace (show newElmGame) $ OneVessel
-                        conn
-                        (Vessel.RegistrationSuccessful newElmGame)
-                    , newGame
-                    )
-                  -- }}}
-              in
-              case (mXP, mOP) of
-                (Nothing, Nothing) ->
-                  -- {{{
+            let
+              newGameFromNewPlayer newIsX newP =
+                -- {{{
+                let
+                  newPs =
+                    if newIsX then
+                      players {Player.xPlayer = newP}
+                    else
+                      players {Player.oPlayer = newP}
+                in
+                Game info newPs
+                -- }}}
+              onlyOne forX theP =
+                -- {{{
+                if   (Player.conn theP & isJust)
+                  || (Player.tag theP /= playerTag)
+                then
                   ( OneVessel conn Vessel.InvalidRequest
                   , g
                   )
-                  -- }}}
-                (Just xP, Nothing) ->
-                  -- {{{
-                  onlyOne True xP
-                  -- }}}
-                (Nothing, Just oP) ->
-                  -- {{{
-                  onlyOne False oP
-                  -- }}}
-                (Just xP, Just oP) ->
-                  -- {{{
+                else
                   let
-                    mXConn = Player.conn xP
-                    mOConn = Player.conn oP
-                    regOneAndInformTheOther regX otherConn =
-                      -- {{{
-                      let
-                        newP = Just $ Player playerTag (Just conn)
-                        newGame = newGameFromNewPlayer regX newP
-                        newElmGame = Game.toElm newGame
-                        vForAlreadyRegd =
-                          (otherConn, Vessel.OpponentJoined newElmGame)
-                        vForNewReg =
-                          (conn, Vessel.RegistrationSuccessful newElmGame)
-                      in
-                      ( if regX then
-                          TwoVessels
-                            { xPayload = vForNewReg
-                            , oPayload = vForAlreadyRegd
-                            }
-                        else
-                          TwoVessels
-                            { xPayload = vForAlreadyRegd
-                            , oPayload = vForNewReg
-                            }
-                      , newGame
-                      )
-                      -- }}}
+                    newP = Just $ Player playerTag (Just conn)
+                    newGame = newGameFromNewPlayer forX newP
+                    newElmGame = Game.toElm newGame
                   in
-                  case (mXConn, mOConn) of
-                    (Just _, Just _) ->
-                      -- {{{
+                  ( OneVessel
+                      conn
+                      (Vessel.RegistrationSuccessful newElmGame)
+                  , newGame
+                  )
+                -- }}}
+            in
+            case (mXP, mOP) of
+              (Nothing, Nothing) ->
+                -- {{{
+                ( OneVessel conn Vessel.InvalidRequest
+                , g
+                )
+                -- }}}
+              (Just xP, Nothing) ->
+                -- {{{
+                onlyOne True xP
+                -- }}}
+              (Nothing, Just oP) ->
+                -- {{{
+                onlyOne False oP
+                -- }}}
+              (Just xP, Just oP) ->
+                -- {{{
+                let
+                  mXConn = Player.conn xP
+                  mOConn = Player.conn oP
+                  regOneAndInformTheOther regX otherConn =
+                    -- {{{
+                    let
+                      newP = Just $ Player playerTag (Just conn)
+                      newGame = newGameFromNewPlayer regX newP
+                      newElmGame = Game.toElm newGame
+                      vForAlreadyRegd =
+                        (otherConn, Vessel.OpponentJoined newElmGame)
+                      vForNewReg =
+                        (conn, Vessel.RegistrationSuccessful newElmGame)
+                    in
+                    ( if regX then
+                        TwoVessels
+                          { xPayload = vForNewReg
+                          , oPayload = vForAlreadyRegd
+                          }
+                      else
+                        TwoVessels
+                          { xPayload = vForAlreadyRegd
+                          , oPayload = vForNewReg
+                          }
+                    , newGame
+                    )
+                    -- }}}
+                in
+                case (mXConn, mOConn) of
+                  (Just _, Just _) ->
+                    -- {{{
+                    ( OneVessel conn Vessel.InvalidRequest
+                    , g
+                    )
+                    -- }}}
+                  (Just xConn, Nothing) ->
+                    -- {{{
+                    regOneAndInformTheOther False xConn
+                    -- }}}
+                  (Nothing, Just oConn) ->
+                    -- {{{
+                    regOneAndInformTheOther True oConn
+                    -- }}}
+                  (Nothing, Nothing) ->
+                    -- {{{
+                    if playerTag == Player.tag xP then
+                      onlyOne True xP
+                    else if playerTag == Player.tag oP then
+                      onlyOne False oP
+                    else
                       ( OneVessel conn Vessel.InvalidRequest
                       , g
                       )
-                      -- }}}
-                    (Just xConn, Nothing) ->
-                      -- {{{
-                      regOneAndInformTheOther False xConn
-                      -- }}}
-                    (Nothing, Just oConn) ->
-                      -- {{{
-                      regOneAndInformTheOther True oConn
-                      -- }}}
-                    (Nothing, Nothing) ->
-                      -- {{{
-                      if playerTag == Player.tag xP then
-                        onlyOne True xP
-                      else if playerTag == Player.tag oP then
-                        onlyOne False oP
-                      else
-                        ( OneVessel conn Vessel.InvalidRequest
-                        , g
-                        )
-                      -- }}}
-                  -- }}}
+                    -- }}}
+                -- }}}
         )
         pool
         []
@@ -471,6 +479,39 @@ updatePoolFrom conn givenVes pool =
       in
       findGameAndRespond pool
       -- }}}
+    Vessel.SetMarkAt targetCode (ElmPlayer playerTag True) coords ->
+      -- {{{
+      go
+        targetCode
+        ( \g ->
+            case Game.newMoveBy playerTag coords g of
+              Just (newGame, xMoved, xConn, oConn) ->
+                -- {{{
+                let
+                  vForMover = Vessel.GameStateUpdate $ Game.toElm newGame
+                  vForOpp   = Vessel.OpponentMoved   $ Game.toElm newGame
+                in
+                ( if xMoved then
+                    TwoVessels
+                      { xPayload = (xConn, vForMover)
+                      , oPayload = (oConn, vForOpp)
+                      }
+                  else
+                    TwoVessels
+                      { xPayload = (xConn, vForOpp)
+                      , oPayload = (oConn, vForMover)
+                      }
+                , newGame
+                )
+                -- }}}
+              Nothing ->
+                -- {{{
+                (OneVessel conn Vessel.InvalidRequest, g)
+                -- }}}
+        )
+        pool
+        []
+      -- }}}
     _ ->
       -- {{{
       (OneVessel conn Vessel.Empty, pool)
@@ -481,28 +522,23 @@ updatePoolFrom conn givenVes pool =
 wsHandler :: WS.PendingConnection -> ApiHandler ()
 wsHandler pendingConn = do
   -- {{{
-  appState <- ask
-  allGames <- getGames appState
-  --
-  conn     <- liftIO $ WS.acceptRequest pendingConn
-  liftIO $ WS.withPingThread conn 1
-    (return ()) $ do
-    forever $ do
-      receivedVessel <- WS.receiveData conn
-      --                ^------------^ can throw ConnectionClosed
+  let log = trace "NEW REQUEST" ()
+  conn <- liftIO $ WS.acceptRequest (seq log pendingConn)
+  forever $ do
+    AppState {games = tvarGames} <- ask
+    liftIO $ WS.withPingThread conn 5 (return ()) $ do
+      receivedVessel <- WS.receiveData conn -- can throw ConnectionClosed
+      allGames <- readTVarIO (trace "============\nREADING TVAR\n============\n" tvarGames)
       let (responseWrappedVessel, newPool) =
             updatePoolFrom conn receivedVessel allGames
-      atomically $ writeTVar (games appState) newPool
+            & trace (allGames >>= ((++ "\n") . show . Game.toElm))
+      atomically $ writeTVar tvarGames (trace "************\nWRITING TVAR\n************\n" newPool)
       case responseWrappedVessel of
         OneVessel destConn v ->
-          WS.sendTextData destConn (trace ("ONE V:\n" ++ show v) v)
+          WS.sendTextData destConn v
         TwoVessels (xConn, xV) (oConn, oV) ->
-             WS.sendTextData xConn (trace ("X:\n" ++ show xV) xV)
-          >> WS.sendTextData oConn (trace ("O:\n" ++ show oV) oV)
-  -- liftIO $ sendTextData conn bsFromClient
-  -- liftIO . forM_ [1..] $ \i -> do
-  --   forkPingThread conn 10
-  --   sendTextData conn (T.pack $ show (i :: Int)) >> threadDelay 1000000
+             WS.sendTextData xConn xV
+          >> WS.sendTextData oConn oV
   -- }}}
 -- }}}
 

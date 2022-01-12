@@ -20,6 +20,7 @@ module Game
   , new
   , kickOff
   , join
+  , newMoveBy
   ) where
 -- }}}
 
@@ -36,6 +37,7 @@ import Player
   , ElmPlayers (..)
   )
 import qualified Player
+import qualified Network.WebSockets as WS
 -- }}}
 
 
@@ -54,6 +56,8 @@ data Mark
   deriving (Generic, Eq, Show)
 deriveBoth defaultOptions ''Mark
 
+markFromBool :: Bool -> Mark
+markFromBool isX = if isX then X else O
 
 -- PLAYGROUND (3 x 3) TODO: add more playground sizes.
 -- {{{
@@ -101,19 +105,28 @@ playgroundToList
   & fromMaybe []
   -- }}}
 
-setMarkAt :: (Int, Mark) -> (Int, Int) -> Playground -> Playground
+setMarkAt :: (Int, Mark) -> (Int, Int) -> Playground -> Maybe Playground
 setMarkAt mark coords pg =
+  -- {{{
+  let
+    mMark = Just mark
+    ifIsFreeThen slot newPG =
+      case slot pg of
+        Nothing -> Just newPG
+        Just _  -> Nothing
+  in
   case coords of
-    (0, 0) -> pg {slot00 = Just mark}
-    (0, 1) -> pg {slot01 = Just mark}
-    (0, 2) -> pg {slot02 = Just mark}
-    (1, 0) -> pg {slot10 = Just mark}
-    (1, 1) -> pg {slot11 = Just mark}
-    (1, 2) -> pg {slot12 = Just mark}
-    (2, 0) -> pg {slot20 = Just mark}
-    (2, 1) -> pg {slot21 = Just mark}
-    (2, 2) -> pg {slot22 = Just mark}
-    _      -> pg
+    (0, 0) -> ifIsFreeThen slot00 $ pg {slot00 = mMark}
+    (0, 1) -> ifIsFreeThen slot01 $ pg {slot01 = mMark}
+    (0, 2) -> ifIsFreeThen slot02 $ pg {slot02 = mMark}
+    (1, 0) -> ifIsFreeThen slot10 $ pg {slot10 = mMark}
+    (1, 1) -> ifIsFreeThen slot11 $ pg {slot11 = mMark}
+    (1, 2) -> ifIsFreeThen slot12 $ pg {slot12 = mMark}
+    (2, 0) -> ifIsFreeThen slot20 $ pg {slot20 = mMark}
+    (2, 1) -> ifIsFreeThen slot21 $ pg {slot21 = mMark}
+    (2, 2) -> ifIsFreeThen slot22 $ pg {slot22 = mMark}
+    _      -> Nothing
+  -- }}}
 
 getLastMove :: Playground -> Maybe (Int, Mark)
 getLastMove pg =
@@ -270,6 +283,58 @@ kickOff code xToStart xP oP =
         , Player.oPlayer = Just oP
         }
     )
+  -- }}}
+
+
+newMoveBy :: String
+          -> (Int, Int)
+          -> Game
+          -> Maybe (Game, Bool, WS.Connection, WS.Connection)
+newMoveBy moveBy
+          coords
+          g@(Game info players@Players {xPlayer = mXP, oPlayer = mOP}) =
+  -- {{{
+  case (mXP, mOP) of
+    (Just (Player xTag (Just xConn)), Just (Player oTag (Just oConn))) -> do
+      -- {{{
+      moveByX <- if moveBy == xTag then
+                   Just True
+                 else if moveBy == oTag then
+                   Just False
+                 else
+                   Nothing
+      let fromCountAndBool newCount markBool = do
+            newPG <- setMarkAt (newCount, markFromBool markBool)
+                               coords
+                               (playground info)
+            return
+              ( Game (info {playground = newPG}) players
+              , markBool
+              , xConn
+              , oConn
+              )
+      case getLastMove $ playground info of
+        Nothing ->
+          -- {{{
+          if xStarted info == moveByX then
+            fromCountAndBool 0 moveByX
+          else
+            Nothing
+          -- }}}
+        Just (count, lastMark) ->
+          -- {{{
+          if markFromBool moveByX == lastMark then
+            Nothing
+          else if count >= 8 then
+            Nothing
+          else
+            fromCountAndBool (count + 1) moveByX
+          -- }}}
+      -- }}}
+    _ ->
+      -- {{{
+      Nothing
+      -- }}}
   -- }}}
 -- }}}
 

@@ -95,6 +95,7 @@ type ProgramView
 
 type alias Model =
   { programView : ProgramView
+  , pageInQueue : Maybe Page
   , title       : String
   , messages    : List Message
   , gamerTag    : String
@@ -118,6 +119,7 @@ init flagsVal url key =
   let
     default =
       { programView = PageView (LandingPage NoPrompt)
+      , pageInQueue = Nothing
       , title       = "Tic-Tac-Toe"
       , messages    = []
       , gamerTag    = defaultPlayer1Tag
@@ -173,6 +175,7 @@ type Msg
   | HandleJoinGameResponse (Result Http.Error Join.ElmResult)
   | SendVessel Vessel
   | HandleVessel (Result D.Error Vessel)
+  | ConnectionLost
 
 
 noCmd : Model -> (Model, Cmd Msg)
@@ -280,9 +283,12 @@ update msg model =
       }
       |> noCmd
       -- }}}
-    StartFadingInNewPage newPage currTime ->
+    StartFadingInNewPage initNewPage currTime ->
       -- {{{
-      case model.programView of
+      let
+        (newModel, newPage) = handleQueuedPage initNewPage model
+      in
+      case newModel.programView of
         FadingOut startOfFade page ->
           -- {{{
           let
@@ -290,7 +296,7 @@ update msg model =
           in
           if millisElapsed >= durationMillis then
             -- {{{
-            ( { model
+            ( { newModel
               | programView = FadingIn currTime newPage
               }
             , giveTimeToMsg <| PutUpNewPage newPage
@@ -298,7 +304,7 @@ update msg model =
             -- }}}
           else
             -- {{{
-            ( model
+            ( newModel
             , updateAfter
                 (durationMillis - millisElapsed)
                 (StartFadingInNewPage newPage (startOfFade + durationMillis))
@@ -307,7 +313,7 @@ update msg model =
           -- }}}
         FadingIn startOfFade _ ->
           -- {{{
-          { model
+          { newModel
           | programView = FadingIn startOfFade newPage
           }
           |> noCmd
@@ -315,15 +321,18 @@ update msg model =
           -- }}}
         _ ->
           -- {{{
-          { model
+          { newModel
           | programView = PageView newPage
           }
           |> noCmd
           -- }}}
       -- }}}
-    PutUpNewPage newPage currTime ->
+    PutUpNewPage initNewPage currTime ->
       -- {{{
-      case model.programView of
+      let
+        (newModel, newPage) = handleQueuedPage initNewPage model
+      in
+      case newModel.programView of
         FadingIn startOfFade page ->
           -- {{{
           let
@@ -331,14 +340,14 @@ update msg model =
           in
           if millisElapsed >= durationMillis then
             -- {{{
-            { model
+            { newModel
             | programView = PageView newPage
             }
             |> noCmd
             -- }}}
           else
             -- {{{
-            ( model
+            ( newModel
             , runCmdAfter
                 (durationMillis - millisElapsed)
                 (giveTimeToMsg (PutUpNewPage newPage))
@@ -347,7 +356,7 @@ update msg model =
           -- }}}
         FadingOut startOfFade page ->
           -- {{{
-          { model
+          { newModel
           | programView = FadingOut startOfFade newPage
           }
           |> noCmd
@@ -355,7 +364,7 @@ update msg model =
           -- }}}
         PageView _ ->
           -- {{{
-          { model
+          { newModel
           | programView = PageView newPage
           }
           |> noCmd
@@ -407,11 +416,11 @@ update msg model =
           , updateAfter durationMillis (UpdateGameCode "")
           , runCmdAfter durationMillis <|
               giveTimeToMsg (StartFadingInNewPage (LandingPage NoPrompt))
-          , httpPost
+          , runCmdAfter durationMillis <| httpPost
               (UB.absolute ["close"] [])
               (Http.jsonBody (E.string model.gameCode))
               (Http.expectWhatever (always NoOp))
-          , closeSocket ()
+          , runCmdAfter durationMillis <| closeSocket ()
           ]
       )
       -- }}}
@@ -484,6 +493,8 @@ update msg model =
                   GamePage newGame
                 Vessel.GameStateUpdate newGame ->
                   GamePage newGame
+                Vessel.OpponentMoved newGame ->
+                  GamePage newGame
                 _ ->
                   getCurrentPage pV
           in
@@ -493,17 +504,63 @@ update msg model =
               | programView = PageView newPage
               }
               |> noCmd
-            FadingOut fadeStarted _ ->
-              ( model
-              , giveTimeToMsg (StartFadingInNewPage newPage)
-              )
-            FadingIn  fadeStarted _ ->
-              ( model
-              , giveTimeToMsg (PutUpNewPage newPage)
-              )
+            _ ->
+              { model
+              | pageInQueue = Just newPage
+              }
+              |> noCmd
         Err _ ->
           noCmd model -- TODO
       -- }}}
+    ConnectionLost ->
+      -- {{{
+      case getCurrentPage model.programView of
+        GamePage (ElmGame info players) ->
+          -- {{{
+          let
+            updatePlayer mPlayer =
+              -- {{{
+              Maybe.map
+                ( \player ->
+                    if player.elmTag == model.gamerTag then 
+                      let
+                        _ = Debug.log "CONNECTION LOST" ()
+                      in
+                      {player | isConnected = False}
+                    else
+                      player
+                )
+                mPlayer
+              -- }}}
+            newPlayers =
+              -- {{{
+              { xElmPlayer = updatePlayer players.xElmPlayer
+              , oElmPlayer = updatePlayer players.oElmPlayer
+              }
+              -- }}}
+          in
+          { model
+          | programView =
+              GamePage (ElmGame info newPlayers)
+              |> PageView
+          }
+          |> noCmd
+          -- }}}
+        _ ->
+          -- {{{
+          noCmd model
+          -- }}}
+      -- }}}
+  -- }}}
+
+handleQueuedPage : Page -> Model -> (Model, Page)
+handleQueuedPage initNewPage model =
+  -- {{{
+  case model.pageInQueue of
+    Nothing ->
+      (model, initNewPage)
+    Just queuedPage ->
+      ({model | pageInQueue = Nothing}, queuedPage)
   -- }}}
 
 
@@ -835,22 +892,34 @@ viewGamePage colorScheme fadingOut gamerTag (ElmGame info ps) =
           -- }}}
         midElem =
           -- {{{
-          H.div [HA.class "h-full max-w-full flex-grow"] []
+          H.div
+            [ HA.class "h-full max-w-full flex-grow px-4"
+            , HA.class "flex items-center justify-center"
+            ]
+            [ ]
+            -- [ H.button
+            --     [ HA.class "text-center"
+            --     , HA.class "cursor-pointer"
+            --     , Vessel.GameStateRequest info.gameCode gamerTag
+            --       |> SendVessel
+            --       |> HE.onClick
+            --     ] [H.text "O"]
+            -- ]
           -- }}}
         rowElems = [leftPlayer, midElem, rightPlayer]
       in
       wrappingDiv rowElems
       -- }}}
-    leaveButton lbl =
+    leaveButton msgOnClick lbl =
       -- {{{
       H.button
-        (HE.onClick CloseServer :: buttonAttrs colorScheme True)
+        (HE.onClick msgOnClick :: buttonAttrs colorScheme True)
         [H.text lbl]
       -- }}}
     theGameBoard renderedPlayersBar mPlayground =
       -- {{{
       let
-        (mainContent, buttonLabel) =
+        (mainContent, btnsMsg, buttonLabel) =
           -- {{{
           case mPlayground of
             Nothing ->
@@ -866,12 +935,18 @@ viewGamePage colorScheme fadingOut gamerTag (ElmGame info ps) =
                       [ HA.class "text-center font-bold text-2xl py-4"
                       ] [H.text info.gameCode]
                   ]
+              , CloseServer
               , "Close"
               )
               -- }}}
-            Just (forXPlayer, pg) ->
+            Just (forXPlayer, theElmPlayer, pg) ->
               -- {{{
-              ( viewPlayground colorScheme forXPlayer pg
+              ( viewPlayground colorScheme info.gameCode theElmPlayer forXPlayer pg
+              , SendVessel
+                  ( Vessel.PlayerLeaving
+                      info.gameCode
+                      {elmTag = gamerTag, isConnected = True}
+                  )
               , "Leave"
               )
               -- }}}
@@ -885,7 +960,7 @@ viewGamePage colorScheme fadingOut gamerTag (ElmGame info ps) =
         ]
         [ renderedPlayersBar
         , mainContent
-        , leaveButton buttonLabel
+        , leaveButton btnsMsg buttonLabel
         ]
       -- }}}
     wrap =
@@ -932,22 +1007,22 @@ viewGamePage colorScheme fadingOut gamerTag (ElmGame info ps) =
     (Just xP, Just oP) ->
       -- {{{
       let
-        xTag = xP.elmTag
+        xTag      = xP.elmTag
         isXPlayer = xTag == gamerTag
       in
       wrap
         [ theGameBoard
             (playersBar (playerTitle xP) (playerTitle oP))
-            (Just (isXPlayer, info.playground))
+            (Just (isXPlayer, if isXPlayer then xP else oP, info.playground))
         ]
       -- }}}
   -- }}}
 
-viewPlayground : ColorScheme -> Bool -> Game.Playground -> Html Msg
-viewPlayground colorScheme xPlayer pg =
+viewPlayground : ColorScheme -> String -> ElmPlayer -> Bool -> Game.Playground -> Html Msg
+viewPlayground colorScheme gCode elmPlayer xPlayer pg =
   -- {{{
   let
-    slotViewer = viewSlot colorScheme xPlayer
+    slotViewer = viewSlot colorScheme gCode elmPlayer xPlayer
   in
   H.div
     [ HA.class "rounded-lg p-px flex items-center justify-center"
@@ -958,15 +1033,21 @@ viewPlayground colorScheme xPlayer pg =
         [ HA.class "grid-cols-3 grid-rows-3 gap-px"
         , HA.class "grid grid-flow-row"
         ]
-        [ slotViewer pg.slot00, slotViewer pg.slot01, slotViewer pg.slot02
-        , slotViewer pg.slot10, slotViewer pg.slot11, slotViewer pg.slot12
-        , slotViewer pg.slot20, slotViewer pg.slot21, slotViewer pg.slot22
+        [ slotViewer pg.slot00 (0, 0), slotViewer pg.slot01 (0, 1), slotViewer pg.slot02 (0, 2)
+        , slotViewer pg.slot10 (1, 0), slotViewer pg.slot11 (1, 1), slotViewer pg.slot12 (1, 2)
+        , slotViewer pg.slot20 (2, 0), slotViewer pg.slot21 (2, 1), slotViewer pg.slot22 (2, 2)
         ]
     ]
   -- }}}
 
-viewSlot : ColorScheme -> Bool -> Maybe (Int, Game.Mark) -> Html Msg
-viewSlot colorScheme xPlayer mSlot =
+viewSlot : ColorScheme
+        -> String
+        -> ElmPlayer
+        -> Bool
+        -> Maybe (Int, Game.Mark)
+        -> (Int, Int)
+        -> Html Msg
+viewSlot colorScheme gCode elmPlayer xPlayer mSlot coord =
   -- {{{
   let
     theSlot =
@@ -978,12 +1059,18 @@ viewSlot colorScheme xPlayer mSlot =
           , HA.class "flex items-center justify-center group"
           ]
           -- }}}
-        theMark =
+        theMark mMark =
           -- {{{
-          if xPlayer then
-            viewGameX
-          else
-            viewGameO
+          case mMark of
+            Nothing ->
+              if xPlayer then
+                viewGameX
+              else
+                viewGameO
+            Just Game.X ->
+              viewGameX
+            Just Game.O ->
+              viewGameO
           -- }}}
       in
       case mSlot of
@@ -991,7 +1078,7 @@ viewSlot colorScheme xPlayer mSlot =
           -- {{{
           H.div
             commonAttrs
-            [ theMark
+            [ theMark (Just mark)
             ]
           -- }}}
         Nothing ->
@@ -1000,9 +1087,13 @@ viewSlot colorScheme xPlayer mSlot =
             (    HA.class "hover:opacity-50 opacity-0"
               :: HA.class duration
               :: HA.class "transition-opacity"
+              :: ( Vessel.SetMarkAt gCode elmPlayer coord
+                   |> SendVessel
+                   |> HE.onClick
+                 )
               :: commonAttrs
             )
-            [ theMark
+            [ theMark Nothing
             ]
           -- }}}
       -- }}}
@@ -1116,20 +1207,25 @@ subscriptions model =
   Sub.batch
     [ BE.onResize SetViewportDimensions
     , vesselReceived (HandleVessel << D.decodeValue Vessel.jsonDecVessel)
-    , case getCurrentPage model.programView of
-        LandingPage _ ->
-          Sub.none
-        GamePage (ElmGame info players) ->
-          Time.every
-            (if bothPlayersAreConnected players then 5000 else 1000)
-            ( Vessel.GameStateRequest info.gameCode model.gamerTag
-              |> SendVessel
-              |> always
-            )
+    , connectionLost (always ConnectionLost)
+    -- , case getCurrentPage model.programView of
+    --     LandingPage _ ->
+    --       Sub.none
+    --     GamePage (ElmGame info players) ->
+    --       if userIsConnected model then
+    --         Time.every
+    --           (if bothPlayersAreConnected players then 5000 else 1000)
+    --           ( Vessel.GameStateRequest info.gameCode model.gamerTag
+    --             |> SendVessel
+    --             |> always
+    --           )
+    --       else
+    --         Sub.none
     ]
   -- }}}
 
 port vesselReceived : (E.Value -> msg) -> Sub msg
+port connectionLost : (Bool    -> msg) -> Sub msg
 -- }}}
 
 
@@ -1186,6 +1282,7 @@ httpPost url body expect =
     }
   -- }}}
 
+
 bothPlayersAreConnected : ElmPlayers -> Bool
 bothPlayersAreConnected players =
   -- {{{
@@ -1194,5 +1291,33 @@ bothPlayersAreConnected players =
       xP.isConnected && oP.isConnected
     _ ->
       False
+  -- }}}
+
+
+userIsConnected : Model -> Bool
+userIsConnected model =
+  -- {{{
+  case getCurrentPage model.programView of
+    GamePage (ElmGame info players) ->
+      -- {{{
+      let
+        check mPlayer =
+          -- {{{
+          case mPlayer of
+            Nothing ->
+              False
+            Just player ->
+              if player.elmTag == model.gamerTag then
+                player.isConnected
+              else
+                False
+          -- }}}
+      in
+      (check players.xElmPlayer) || (check players.oElmPlayer)
+      -- }}}
+    _ ->
+      -- {{{
+      False
+      -- }}}
   -- }}}
 -- }}}

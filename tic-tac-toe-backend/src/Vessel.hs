@@ -30,6 +30,8 @@ data Vessel
   | OpponentJoined         ElmGame
   | Collection            [Vessel]
   | GameStateUpdate        ElmGame
+  | OpponentMoved          ElmGame
+  | SetMarkAt String ElmPlayer (Int, Int)
   deriving (Generic, Show)
 
 deriveBoth defaultOptions ''Vessel
