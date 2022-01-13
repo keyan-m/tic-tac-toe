@@ -14,7 +14,8 @@ import Network.WebSockets (WebSocketsData)
 import qualified Network.WebSockets as WS
 import Elm.Derive
 import Player (ElmPlayer)
-import Game (ElmGame)
+import Game (ElmGame, GameResult)
+import qualified Game
 
 
 data Vessel
@@ -31,7 +32,8 @@ data Vessel
   | Collection            [Vessel]
   | GameStateUpdate        ElmGame
   | OpponentMoved          ElmGame
-  | SetMarkAt String ElmPlayer (Int, Int)
+  | SetMarkAt              String ElmPlayer (Int, Int)
+  | GameEnded   GameResult ElmGame
   deriving (Generic, Show)
 
 deriveBoth defaultOptions ''Vessel

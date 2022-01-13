@@ -27,6 +27,8 @@ run = do
       [ DefineElm (Proxy :: Proxy Game.ElmGame)
       , DefineElm (Proxy :: Proxy Game.Info)
       , DefineElm (Proxy :: Proxy Game.Mark)
+      , DefineElm (Proxy :: Proxy Game.Direction)
+      , DefineElm (Proxy :: Proxy Game.GameResult)
       , DefineElm (Proxy :: Proxy Game.Playground)
       ]
   writeFile "../tic-tac-toe-frontend/src/Elm/Join.elm" $

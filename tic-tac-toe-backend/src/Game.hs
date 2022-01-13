@@ -11,6 +11,9 @@
 module Game
   ( Game (..)
   , ElmGame (..)
+  , NewMoveOutcome (..)
+  , Direction (..)
+  , GameResult (..)
   , fromElm
   , toElm
   , Info (..)
@@ -43,12 +46,6 @@ import qualified Network.WebSockets as WS
 
 -- MODEL
 -- {{{
-data Result
-  = Inconclusive
-  | Draw
-  | XWon
-  | OWon
-
 
 data Mark
   = X
@@ -58,6 +55,33 @@ deriveBoth defaultOptions ''Mark
 
 markFromBool :: Bool -> Mark
 markFromBool isX = if isX then X else O
+
+
+data Direction
+  = Row0
+  | Row1
+  | Row2
+  | Col0
+  | Col1
+  | Col2
+  | Dia0
+  | Dia1
+  deriving (Generic, Eq, Show)
+deriveBoth defaultOptions ''Direction
+
+
+data MarkTriplet = MarkTriplet
+  { dir   :: Direction
+  , marks :: (Maybe Mark, Maybe Mark, Maybe Mark)
+  }
+
+data GameResult
+  = Draw
+  | XWon Direction
+  | OWon Direction
+  deriving (Generic, Eq, Show)
+deriveBoth defaultOptions ''GameResult
+
 
 -- PLAYGROUND (3 x 3) TODO: add more playground sizes.
 -- {{{
@@ -128,6 +152,7 @@ setMarkAt mark coords pg =
     _      -> Nothing
   -- }}}
 
+
 getLastMove :: Playground -> Maybe (Int, Mark)
 getLastMove pg =
   -- {{{
@@ -138,96 +163,82 @@ getLastMove pg =
 tripletFromAccessor acc1 acc2 acc3 pg =
   (snd <$> acc1 pg, snd <$> acc2 pg, snd <$> acc3 pg)
 
-playgroundsRow0 :: Playground -> (Maybe Mark, Maybe Mark, Maybe Mark)
-playgroundsRow0 =
+playgroundToMarkTriplet :: Direction -> Playground -> MarkTriplet
+playgroundToMarkTriplet dir =
   -- {{{
-  tripletFromAccessor slot00 slot01 slot02
-  -- }}}
-playgroundsRow1 :: Playground -> (Maybe Mark, Maybe Mark, Maybe Mark)
-playgroundsRow1 =
-  -- {{{
-  tripletFromAccessor slot10 slot11 slot12
-  -- }}}
-playgroundsRow2 :: Playground -> (Maybe Mark, Maybe Mark, Maybe Mark)
-playgroundsRow2 =
-  -- {{{
-  tripletFromAccessor slot20 slot21 slot22
-  -- }}}
-playgroundsCol0 :: Playground -> (Maybe Mark, Maybe Mark, Maybe Mark)
-playgroundsCol0 =
-  -- {{{
-  tripletFromAccessor
-    slot00
-    slot10
-    slot20
-  -- }}}
-playgroundsCol1 :: Playground -> (Maybe Mark, Maybe Mark, Maybe Mark)
-playgroundsCol1 =
-  -- {{{
-  tripletFromAccessor
-    slot01
-    slot11
-    slot21
-  -- }}}
-playgroundsCol2 :: Playground -> (Maybe Mark, Maybe Mark, Maybe Mark)
-playgroundsCol2 =
-  -- {{{
-  tripletFromAccessor
-    slot02
-    slot12
-    slot22
-  -- }}}
-playgroundsDia0 :: Playground -> (Maybe Mark, Maybe Mark, Maybe Mark)
-playgroundsDia0 =
-  -- {{{
-  tripletFromAccessor
-    slot00
-    slot11
-    slot22
-  -- }}}
-playgroundsDia1 :: Playground -> (Maybe Mark, Maybe Mark, Maybe Mark)
-playgroundsDia1 =
-  -- {{{
-  tripletFromAccessor
-    slot02
-    slot11
-    slot20
+  MarkTriplet dir .
+    case dir of
+      Row0 ->
+        tripletFromAccessor slot00 slot01 slot02
+      Row1 ->
+        tripletFromAccessor slot10 slot11 slot12
+      Row2 ->
+        tripletFromAccessor slot20 slot21 slot22
+      Col0 ->
+        tripletFromAccessor
+          slot00
+          slot10
+          slot20
+      Col1 ->
+        tripletFromAccessor
+          slot01
+          slot11
+          slot21
+      Col2 ->
+        tripletFromAccessor
+          slot02
+          slot12
+          slot22
+      Dia0 ->
+        tripletFromAccessor
+          slot00
+          slot11
+          slot22
+      Dia1 ->
+        tripletFromAccessor
+          slot02
+          slot11
+          slot20
   -- }}}
 
-findResultFromTriplet :: (Maybe Mark, Maybe Mark, Maybe Mark) -> Result
-findResultFromTriplet triplet =
+findResultFromMarkTriplet :: MarkTriplet -> Maybe GameResult
+findResultFromMarkTriplet (MarkTriplet dir triplet) =
   -- {{{
   case triplet of
     (Just X, Just X, Just X) ->
-      XWon
+      Just $ XWon dir
     (Just O, Just O, Just O) ->
-      OWon
+      Just $ OWon dir
     (Just _, Just _, Just _) ->
-      Draw
+      Just Draw
     _ ->
-      Inconclusive
+      Nothing
   -- }}}
 
-combResults :: Result -> Result -> Result
-combResults res0 Inconclusive = res0
-combResults res0 Draw         = res0
-combResults _    res1         = res1
+combResults :: Maybe GameResult -> Maybe GameResult -> Maybe GameResult
+combResults res@(Just (XWon dir)) _                     = res
+combResults _                     res@(Just (XWon dir)) = res
+combResults res@(Just (OWon dir)) _                     = res
+combResults _                     res@(Just (OWon dir)) = res
+combResults Nothing               _                     = Nothing
+combResults _                     Nothing               = Nothing
+combResults _                     _                     = Just Draw
 -- }}}
 
-playgroundsResult :: Playground -> Result
+playgroundsResult :: Playground -> Maybe GameResult
 playgroundsResult pg =
   -- {{{
   let
-    fromFn fn = pg & fn & findResultFromTriplet
-  in
-    combResults (fromFn playgroundsRow0)
-  $ combResults (fromFn playgroundsRow1)
-  $ combResults (fromFn playgroundsRow2)
-  $ combResults (fromFn playgroundsCol0)
-  $ combResults (fromFn playgroundsCol1)
-  $ combResults (fromFn playgroundsCol2)
-  $ combResults (fromFn playgroundsDia0)
-  $ fromFn playgroundsDia1
+    fromFn fn = pg & fn & findResultFromMarkTriplet
+  in do
+    combResults (fromFn $ playgroundToMarkTriplet Row0)
+  $ combResults (fromFn $ playgroundToMarkTriplet Row1)
+  $ combResults (fromFn $ playgroundToMarkTriplet Row2)
+  $ combResults (fromFn $ playgroundToMarkTriplet Col0)
+  $ combResults (fromFn $ playgroundToMarkTriplet Col1)
+  $ combResults (fromFn $ playgroundToMarkTriplet Col2)
+  $ combResults (fromFn $ playgroundToMarkTriplet Dia0)
+                (fromFn $ playgroundToMarkTriplet Dia1)
   -- }}}
 -- }}}
 
@@ -286,10 +297,20 @@ kickOff code xToStart xP oP =
   -- }}}
 
 
+data NewMoveOutcome = NewMoveOutcome
+  { updatedGame     :: Game
+  , moveWasByX      :: Bool
+  , xPlayersConn    :: WS.Connection
+  , oPlayersConn    :: WS.Connection
+  , resultAfterMove :: Maybe GameResult
+  }
+
+
 newMoveBy :: String
           -> (Int, Int)
           -> Game
-          -> Maybe (Game, Bool, WS.Connection, WS.Connection)
+          -- -> Maybe (Game, Bool, WS.Connection, WS.Connection)
+          -> Maybe NewMoveOutcome
 newMoveBy moveBy
           coords
           g@(Game info players@Players {xPlayer = mXP, oPlayer = mOP}) =
@@ -307,12 +328,13 @@ newMoveBy moveBy
             newPG <- setMarkAt (newCount, markFromBool markBool)
                                coords
                                (playground info)
-            return
-              ( Game (info {playground = newPG}) players
-              , markBool
-              , xConn
-              , oConn
-              )
+            return $ NewMoveOutcome
+              { updatedGame     = Game (info {playground = newPG}) players
+              , moveWasByX      = markBool
+              , xPlayersConn    = xConn
+              , oPlayersConn    = oConn
+              , resultAfterMove = playgroundsResult newPG
+              }
       case getLastMove $ playground info of
         Nothing ->
           -- {{{

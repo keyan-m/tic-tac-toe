@@ -485,11 +485,30 @@ updatePoolFrom conn givenVes pool =
         targetCode
         ( \g ->
             case Game.newMoveBy playerTag coords g of
-              Just (newGame, xMoved, xConn, oConn) ->
+              -- Just (newGame, xMoved, xConn, oConn) ->
+              Just outcomeInfo ->
                 -- {{{
                 let
-                  vForMover = Vessel.GameStateUpdate $ Game.toElm newGame
-                  vForOpp   = Vessel.OpponentMoved   $ Game.toElm newGame
+                  newGame = Game.updatedGame     outcomeInfo
+                  xMoved  = Game.moveWasByX      outcomeInfo
+                  xConn   = Game.xPlayersConn    outcomeInfo
+                  oConn   = Game.oPlayersConn    outcomeInfo
+                  mResult = Game.resultAfterMove outcomeInfo
+                  (vForMover, vForOpp) =
+                    case mResult of
+                      Just res ->
+                        -- {{{
+                        let
+                          commonV = Vessel.GameEnded res $ Game.toElm newGame
+                        in
+                        (commonV, commonV)
+                        -- }}}
+                      Nothing  ->
+                        -- {{{
+                        ( Vessel.GameStateUpdate $ Game.toElm newGame
+                        , Vessel.OpponentMoved   $ Game.toElm newGame
+                        )
+                        -- }}}
                 in
                 ( if xMoved then
                     TwoVessels
