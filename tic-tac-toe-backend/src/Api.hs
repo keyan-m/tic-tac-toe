@@ -5,6 +5,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE RecordWildCards   #-}
 -- }}}
 
 
@@ -100,62 +101,6 @@ api :: Proxy Api
 api = Proxy
 
 type ApiHandler = ReaderT AppState Servant.Handler
--- }}}
-
-
-
--- UTILS
--- {{{
-data AppState = AppState
-  { games :: TVar [Game]
-  } deriving (Generic)
-
-initApp :: IO AppState
-initApp = do
-  oGs <- newTVarIO []
-  return $ AppState
-    { games = oGs
-    }
-
-getGames :: AppState -> ApiHandler [Game]
-getGames appState = do
-  -- {{{
-  readTVarIO $ games appState
-  -- }}}
-
-getGamesIO :: AppState -> IO [Game]
-getGamesIO appState = do
-  -- {{{
-  readTVarIO $ games appState
-  -- }}}
-
-
-broadcastGame :: Game -> IO ()
-broadcastGame game@(Game info Players {xPlayer = mXP, oPlayer = mOP}) =
-  -- {{{
-  let
-    broadcastGameToPlayer player =
-      -- {{{
-      -- case trace ("BROADCASTING:\n" ++ show (Game.toElm game)) (Player.conn player) of
-      case Player.conn player of
-        Nothing ->
-          return ()
-        Just conn ->
-            Game.toElm game
-          & Vessel.GameStateUpdate
-          & WS.sendTextData conn
-      -- }}}
-  in
-  case (mXP, mOP) of
-    (Nothing, Nothing) ->
-      return ()
-    (Just xP, Nothing) ->
-      broadcastGameToPlayer xP
-    (Nothing, Just oP) ->
-      broadcastGameToPlayer oP
-    (Just xP, Just oP) ->
-      broadcastGameToPlayer xP >> broadcastGameToPlayer oP
-  -- }}}
 -- }}}
 
 
@@ -596,4 +541,60 @@ startApp = do
   putStrLn "Starting server on port 8080"
   putStrLn "============================\n"
   run 8080 (app initAppState)
+-- }}}
+
+
+
+-- UTILS
+-- {{{
+data AppState = AppState
+  { games :: TVar [Game]
+  } deriving (Generic)
+
+initApp :: IO AppState
+initApp = do
+  oGs <- newTVarIO []
+  return $ AppState
+    { games = oGs
+    }
+
+getGames :: AppState -> ApiHandler [Game]
+getGames appState = do
+  -- {{{
+  readTVarIO $ games appState
+  -- }}}
+
+getGamesIO :: AppState -> IO [Game]
+getGamesIO appState = do
+  -- {{{
+  readTVarIO $ games appState
+  -- }}}
+
+
+broadcastGame :: Game -> IO ()
+broadcastGame game@(Game info Players {xPlayer = mXP, oPlayer = mOP}) =
+  -- {{{
+  let
+    broadcastGameToPlayer player =
+      -- {{{
+      -- case trace ("BROADCASTING:\n" ++ show (Game.toElm game)) (Player.conn player) of
+      case Player.conn player of
+        Nothing ->
+          return ()
+        Just conn ->
+            Game.toElm game
+          & Vessel.GameStateUpdate
+          & WS.sendTextData conn
+      -- }}}
+  in
+  case (mXP, mOP) of
+    (Nothing, Nothing) ->
+      return ()
+    (Just xP, Nothing) ->
+      broadcastGameToPlayer xP
+    (Nothing, Just oP) ->
+      broadcastGameToPlayer oP
+    (Just xP, Just oP) ->
+      broadcastGameToPlayer xP >> broadcastGameToPlayer oP
+  -- }}}
 -- }}}

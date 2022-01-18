@@ -2,7 +2,8 @@
 -- {{{
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE RecordWildCards   #-}
 -- }}}
 
 
@@ -113,12 +114,7 @@ emptyPlayground = Playground
   -- }}}
 
 playgroundToList :: Playground -> [(Int, Mark)]
-playgroundToList
-  Playground
-    { slot00 = slot00 , slot01 = slot01 , slot02 = slot02
-    , slot10 = slot10 , slot11 = slot11 , slot12 = slot12
-    , slot20 = slot20 , slot21 = slot21 , slot22 = slot22
-    } =
+playgroundToList Playground{..} =
   -- {{{
   [ slot00 , slot01 , slot02
   , slot10 , slot11 , slot12
@@ -249,6 +245,7 @@ data Info = Info
   { gameCode   :: String
   , xStarted   :: Bool
   , playground :: Playground
+  , gameTime   :: Integer
   } deriving (Generic, Show)
 deriveBoth defaultOptions ''Info
 
@@ -375,5 +372,3 @@ toElm (Game info players) = ElmGame info (Player.toElms players)
 
 
 -- }}}
-
-
