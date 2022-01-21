@@ -7,6 +7,7 @@ module Join where
 
 
 import ClassyPrelude
+import Data.Function ((&))
 import Elm.Derive
 import Player (Player (..), Players (..), ElmPlayer (..), ElmPlayers (..))
 import qualified Player
@@ -47,17 +48,18 @@ fromElm (ElmSuccessful elmGame) =
 
 -- UTILS
 -- {{{
-attempt :: String -> ElmPlayer -> Game -> Result
-attempt targetCode elmPlayer game@(Game info players) =
+attempt :: Int -> String -> ElmPlayer -> Game -> Result
+attempt currPOSIX targetCode elmPlayer (Game info players) =
   -- {{{
   let
     currCode = Game.gameCode info
   in
   if currCode == targetCode then
     -- {{{
-    Successful $ Game info $ players
-      { oPlayer = Just $ Player.fromElm elmPlayer
-      }
+    Game
+      (info {Game.startPOSIX = currPOSIX})
+      (players {oPlayer = Just $ Player.fromElm elmPlayer})
+    & Successful
     -- }}}
   else
     -- {{{

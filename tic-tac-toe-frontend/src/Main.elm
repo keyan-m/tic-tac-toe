@@ -2,7 +2,7 @@ port module Main exposing (..)
 
 
 -- {{{ IMPORTS 
-import Time
+import Time exposing (Posix)
 import Task
 import Process
 import Utils exposing (..)
@@ -20,6 +20,9 @@ import Json.Encode as E
 import Json.Decode as D
 import Json.Decode.Pipeline as D exposing (required, optional)
 import Http
+--
+import Extend.String as String
+import Extend.Maybe  as Maybe
 -- From Bridge.hs
 import Player exposing (ElmPlayer, ElmPlayers)
 import Game as Game exposing (ElmGame(..), GameResult)
@@ -106,6 +109,8 @@ type alias Model =
   , url         : Url
   , darkMode    : Bool
   , seed        : Int
+  , gameTimerPaused         : Bool
+  , latestPOSIXIsFromServer : Bool
   }
 
 
@@ -130,6 +135,8 @@ init flagsVal url key =
       , url         = url
       , darkMode    = False
       , seed        = 0
+      , gameTimerPaused         = False
+      , latestPOSIXIsFromServer = False
       }
   in
   case D.decodeValue flagsDecoder flagsVal of
@@ -175,6 +182,7 @@ type Msg
   | HandleJoinGameResponse (Result Http.Error Join.ElmResult)
   | SendVessel Vessel
   | HandleVessel (Result D.Error Vessel)
+  | IncrementGameTime Int
   | ConnectionLost
 
 
@@ -483,27 +491,33 @@ update msg model =
       -- {{{
       case res of
         Ok vessel ->
+          -- {{{
           let
             pV = model.programView
-            (doFade, newPage) =
+            (doFade, newPage, posixUpdated) =
               case vessel of
                 Vessel.RegistrationSuccessful newGame ->
-                  (False, GamePage Nothing newGame)
+                  (False, GamePage Nothing newGame, True)
                 Vessel.OpponentJoined newGame ->
-                  (True, GamePage Nothing newGame)
+                  (True, GamePage Nothing newGame, True)
                 Vessel.GameStateUpdate newGame ->
-                  (False, GamePage Nothing newGame)
+                  (False, GamePage Nothing newGame, True)
                 Vessel.OpponentMoved newGame ->
-                  (False, GamePage Nothing newGame)
+                  (False, GamePage Nothing newGame, True)
                 Vessel.GameEnded gameResult newGame ->
-                  (False, GamePage (Just gameResult) newGame)
+                  (False, GamePage (Just gameResult) newGame, True)
                 _ ->
-                  (False, getCurrentPage pV)
+                  (False, getCurrentPage pV, False)
+            newModel =
+              { model
+              | latestPOSIXIsFromServer = posixUpdated
+              }
           in
           case model.programView of
             PageView              _ ->
+              -- {{{
               if doFade then
-                ( model
+                ( newModel
                 , Cmd.batch
                     [ giveTimeToMsg StartFadingOut
                     , giveTimeToMsg (StartFadingInNewPage newPage)
@@ -511,17 +525,23 @@ update msg model =
                     ]
                 )
               else
-                { model
+                { newModel
                 | programView = PageView newPage
                 }
                 |> noCmd
+              -- }}}
             _ ->
-              { model
+              -- {{{
+              { newModel
               | pageInQueue = Just newPage
               }
               |> noCmd
+              -- }}}
+          -- }}}
         Err _ ->
+          -- {{{
           noCmd model -- TODO
+          -- }}}
       -- }}}
     ConnectionLost ->
       -- {{{
@@ -556,6 +576,42 @@ update msg model =
               |> PageView
           }
           |> noCmd
+          -- }}}
+        _ ->
+          -- {{{
+          noCmd model
+          -- }}}
+      -- }}}
+    IncrementGameTime currMillis ->
+      -- {{{
+      case model.programView of
+        PageView (GamePage Nothing (ElmGame info players)) ->
+          -- {{{
+          let
+            latestPOSIX = info.latestPOSIX
+            deltaPOSIX  = currMillis - latestPOSIX
+          in
+          if deltaPOSIX < gameTimeTickMillis then
+            ( { model
+              | gameTimerPaused = True
+              }
+            , runCmdAfter (gameTimeTickMillis - deltaPOSIX) <|
+                giveTimeToMsg IncrementGameTime
+            )
+          else
+            { model
+            | programView =
+                ElmGame
+                  { info
+                  | latestPOSIX = latestPOSIX + gameTimeTickMillis
+                  }
+                  players
+                |> GamePage Nothing
+                |> PageView
+            , gameTimerPaused         = False
+            , latestPOSIXIsFromServer = False
+            }
+            |> noCmd
           -- }}}
         _ ->
           -- {{{
@@ -898,49 +954,49 @@ viewGamePage colorScheme fadingOut gamerTag mRes (ElmGame info ps) =
       -- }}}
     midElem =
       -- {{{
+      let
+        gameTimeStr =
+          (info.latestPOSIX - info.startPOSIX) // 1000
+          |> String.timerFromSeconds
+      in
       H.div
         [ HA.class "h-full max-w-full flex-grow px-4"
         , HA.class "flex items-center justify-center"
-        ] <|
-      case (mRes, mXP, mOP) of
-        (Nothing, _, _) ->
-          -- {{{
-            []
-          -- }}}
-        (_, Nothing, _) ->
-          -- {{{
-            []
-          -- }}}
-        (_, _, Nothing) ->
-          -- {{{
-            []
-          -- }}}
-        (Just res, Just xP, Just oP) ->
-          -- {{{
-          [ H.div
-              [ HA.class "text-center"
-              , HA.class "flex-grow"
-              -- , Vessel.GameStateRequest info.gameCode gamerTag
-              --   |> SendVessel
-              --   |> HE.onClick
-              ]
-              [ H.text <|
-                  case res of
-                    Game.XWon dir ->
-                      if gamerTag == xP.elmTag then
-                        "YOU WON!"
-                      else
-                        "-- X won --"
-                    Game.OWon dir ->
-                      if gamerTag == oP.elmTag then
-                        "YOU WON!"
-                      else
-                        "-- O won --"
-                    Game.Draw ->
-                      "-- DRAW --"
-              ]
-          ]
-          -- }}}
+        ]
+        [ H.div
+            [HA.class "text-center flex-grow"]
+            [ H.text <|
+                case (mRes, mXP, mOP) of
+                  (_, Nothing, _) ->
+                    -- {{{
+                      ""
+                    -- }}}
+                  (_, _, Nothing) ->
+                    -- {{{
+                      ""
+                    -- }}}
+                  (Nothing, _, _) ->
+                    -- {{{
+                      gameTimeStr
+                    -- }}}
+                  (Just res, Just xP, Just oP) ->
+                    -- {{{
+                    case res of
+                      Game.XWon dir ->
+                        if gamerTag == xP.elmTag then
+                          "YOU WON!"
+                        else
+                          "-- X won --"
+                      Game.OWon dir ->
+                        if gamerTag == oP.elmTag then
+                          "YOU WON!"
+                        else
+                          "-- O won --"
+                      Game.Draw ->
+                        "-- DRAW --"
+                    -- }}}
+            ]
+        ]
       -- }}}
     playersBar leftPlayer rightPlayer =
       -- {{{
@@ -987,7 +1043,13 @@ viewGamePage colorScheme fadingOut gamerTag mRes (ElmGame info ps) =
               -- }}}
             Just (forXPlayer, theElmPlayer, pg) ->
               -- {{{
-              ( viewPlayground colorScheme info.gameCode theElmPlayer forXPlayer pg
+              ( viewPlayground
+                  colorScheme
+                  (Maybe.isJust mRes)
+                  info.gameCode
+                  theElmPlayer
+                  forXPlayer
+                  pg
               , SendVessel
                   ( Vessel.PlayerLeaving
                       info.gameCode
@@ -1064,11 +1126,17 @@ viewGamePage colorScheme fadingOut gamerTag mRes (ElmGame info ps) =
       -- }}}
   -- }}}
 
-viewPlayground : ColorScheme -> String -> ElmPlayer -> Bool -> Game.Playground -> Html Msg
-viewPlayground colorScheme gCode elmPlayer xPlayer pg =
+viewPlayground : ColorScheme -> Bool -> String -> ElmPlayer -> Bool -> Game.Playground -> Html Msg
+viewPlayground colorScheme disabled gCode elmPlayer xPlayer pg =
   -- {{{
   let
-    slotViewer = viewSlot colorScheme gCode elmPlayer xPlayer
+    slotViewer =
+      viewSlot
+        colorScheme
+        disabled
+        gCode
+        elmPlayer
+        xPlayer
   in
   H.div
     [ HA.class "rounded-lg p-px flex items-center justify-center"
@@ -1087,13 +1155,14 @@ viewPlayground colorScheme gCode elmPlayer xPlayer pg =
   -- }}}
 
 viewSlot : ColorScheme
+        -> Bool
         -> String
         -> ElmPlayer
         -> Bool
         -> Maybe (Int, Game.Mark)
         -> (Int, Int)
         -> Html Msg
-viewSlot colorScheme gCode elmPlayer xPlayer mSlot coord =
+viewSlot colorScheme disabled gCode elmPlayer xPlayer mSlot coord =
   -- {{{
   let
     theSlot =
@@ -1119,15 +1188,19 @@ viewSlot colorScheme gCode elmPlayer xPlayer mSlot coord =
               viewGameO
           -- }}}
       in
-      case mSlot of
-        Just (_, mark) ->
+      case (disabled, mSlot) of
+        (_, Just (_, mark)) ->
           -- {{{
           H.div
             commonAttrs
             [ theMark (Just mark)
             ]
           -- }}}
-        Nothing ->
+        (True, _) ->
+          -- {{{
+          H.div commonAttrs []
+          -- }}}
+        (False, Nothing) ->
           -- {{{
           H.div
             (    HA.class "hover:opacity-50 opacity-0"
@@ -1255,19 +1328,27 @@ subscriptions model =
     [ BE.onResize SetViewportDimensions
     , vesselReceived (HandleVessel << D.decodeValue Vessel.jsonDecVessel)
     , connectionLost (always ConnectionLost)
-    -- , case getCurrentPage model.programView of
-    --     LandingPage _ ->
-    --       Sub.none
-    --     GamePage (ElmGame info players) ->
-    --       if userIsConnected model then
-    --         Time.every
-    --           (if bothPlayersAreConnected players then 5000 else 1000)
-    --           ( Vessel.GameStateRequest info.gameCode model.gamerTag
-    --             |> SendVessel
-    --             |> always
-    --           )
-    --       else
-    --         Sub.none
+    , case getCurrentPage model.programView of
+        LandingPage _ ->
+          Sub.none
+        GamePage Nothing (ElmGame info players) ->
+          if bothPlayersAreConnected players && (not model.gameTimerPaused) then
+            Time.every
+              gameTimeTickMillis
+              (IncrementGameTime << Time.posixToMillis)
+          else
+            Sub.none
+          -- if userIsConnected model then
+          --   Time.every
+          --     (if bothPlayersAreConnected players then 5000 else 1000)
+          --     ( Vessel.GameStateRequest info.gameCode model.gamerTag
+          --       |> SendVessel
+          --       |> always
+          --     )
+          -- else
+          --   Sub.none
+        GamePage _ _ ->
+          Sub.none
     ]
   -- }}}
 

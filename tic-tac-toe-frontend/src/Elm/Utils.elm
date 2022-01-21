@@ -15,6 +15,7 @@ import Http
 duration = "duration-200"
 durationMillis = 200
 timeoutMillis  = 20000
+gameTimeTickMillis = 1000
 
 
 type MessageType

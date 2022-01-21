@@ -22,7 +22,6 @@ module Game
   , Playground
   , getCode
   , new
-  , kickOff
   , join
   , newMoveBy
   ) where
@@ -242,10 +241,11 @@ playgroundsResult pg =
 -- GAME
 -- {{{
 data Info = Info
-  { gameCode   :: String
-  , xStarted   :: Bool
-  , playground :: Playground
-  , gameTime   :: Integer
+  { gameCode    :: String
+  , xStarted    :: Bool
+  , playground  :: Playground
+  , startPOSIX  :: Int
+  , latestPOSIX :: Int
   } deriving (Generic, Show)
 deriveBoth defaultOptions ''Info
 
@@ -263,9 +263,11 @@ new newCode xPTag =
   -- {{{
   Game
     ( Info
-        { gameCode = newCode
-        , xStarted = True
-        , playground = emptyPlayground
+        { gameCode    = newCode
+        , xStarted    = True
+        , playground  = emptyPlayground
+        , startPOSIX  = 0
+        , latestPOSIX = 0
         }
     )
     ( Players
@@ -275,23 +277,6 @@ new newCode xPTag =
     )
   -- }}}
 
-
-kickOff :: String -> Bool -> Player -> Player -> Game
-kickOff code xToStart xP oP =
-  -- {{{
-  Game
-    ( Info
-        { gameCode   = code
-        , xStarted   = xToStart
-        , playground = emptyPlayground
-        }
-    )
-    ( Players
-        { Player.xPlayer = Just xP
-        , Player.oPlayer = Just oP
-        }
-    )
-  -- }}}
 
 
 data NewMoveOutcome = NewMoveOutcome
@@ -342,9 +327,7 @@ newMoveBy moveBy
           -- }}}
         Just (count, lastMark) ->
           -- {{{
-          if markFromBool moveByX == lastMark then
-            Nothing
-          else if count >= 8 then
+          if (markFromBool moveByX == lastMark) || (count >= 8) then
             Nothing
           else
             fromCountAndBool (count + 1) moveByX
