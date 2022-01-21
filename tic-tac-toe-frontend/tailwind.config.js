@@ -1,6 +1,7 @@
 module.exports =
   { content  :
       [ "./src/*.elm"
+      , "./src/**/*.elm"
       , "./src/*.js"
       ]
   , darkMode : "class"

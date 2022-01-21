@@ -1045,7 +1045,7 @@ viewGamePage colorScheme fadingOut gamerTag mRes (ElmGame info ps) =
               -- {{{
               ( viewPlayground
                   colorScheme
-                  (Maybe.isJust mRes)
+                  mRes
                   info.gameCode
                   theElmPlayer
                   forXPlayer
@@ -1126,14 +1126,20 @@ viewGamePage colorScheme fadingOut gamerTag mRes (ElmGame info ps) =
       -- }}}
   -- }}}
 
-viewPlayground : ColorScheme -> Bool -> String -> ElmPlayer -> Bool -> Game.Playground -> Html Msg
-viewPlayground colorScheme disabled gCode elmPlayer xPlayer pg =
+viewPlayground : ColorScheme
+              -> Maybe GameResult
+              -> String
+              -> ElmPlayer
+              -> Bool
+              -> Game.Playground
+              -> Html Msg
+viewPlayground colorScheme mRes gCode elmPlayer xPlayer pg =
   -- {{{
   let
     slotViewer =
       viewSlot
         colorScheme
-        disabled
+        mRes
         gCode
         elmPlayer
         xPlayer
@@ -1141,7 +1147,6 @@ viewPlayground colorScheme disabled gCode elmPlayer xPlayer pg =
   H.div
     [ HA.class "rounded-lg p-px flex items-center justify-center"
     , HA.class "flex-grow"
-    , HA.class colorScheme.bgInv
     ]
     [ H.div
         [ HA.class "grid-cols-3 grid-rows-3 gap-px"
@@ -1155,16 +1160,35 @@ viewPlayground colorScheme disabled gCode elmPlayer xPlayer pg =
   -- }}}
 
 viewSlot : ColorScheme
-        -> Bool
+        -> Maybe GameResult
         -> String
         -> ElmPlayer
         -> Bool
         -> Maybe (Int, Game.Mark)
         -> (Int, Int)
         -> Html Msg
-viewSlot colorScheme disabled gCode elmPlayer xPlayer mSlot coord =
+viewSlot colorScheme mRes gCode elmPlayer xPlayer mSlot coord =
   -- {{{
   let
+    (disabled, bgClass) =
+      let
+        fromDir dir =
+          -- {{{
+          if coordInDir dir coord then
+            (True, colorScheme.bgInv)
+          else
+            (True, colorScheme.btnBg)
+          -- }}}
+      in
+      case mRes of
+        Nothing ->
+          (False, colorScheme.btnBg)
+        Just Game.Draw ->
+          (True, colorScheme.grey)
+        Just (Game.XWon dir) ->
+          fromDir dir
+        Just (Game.OWon dir) ->
+          fromDir dir
     theSlot =
       -- {{{
       let
@@ -1221,7 +1245,7 @@ viewSlot colorScheme disabled gCode elmPlayer xPlayer mSlot coord =
     [ HA.class "h-24 w-24 relative rounded-md"
     , HA.class "transition-colors"
     , HA.class duration
-    , HA.class colorScheme.btnBg
+    , HA.class bgClass
     , HA.class colorScheme.btnTxt
     ] [theSlot]
   -- }}}
@@ -1448,4 +1472,28 @@ userIsConnected model =
       False
       -- }}}
   -- }}}
+
+
+coordInDir : Game.Direction -> (Int, Int) -> Bool
+coordInDir dir (row, col) =
+  -- {{{
+  case dir of
+    Game.Row0 ->
+      row == 0
+    Game.Row1 ->
+      row == 1
+    Game.Row2 ->
+      row == 2
+    Game.Col0 ->
+      col == 0
+    Game.Col1 ->
+      col == 1
+    Game.Col2 ->
+      col == 2
+    Game.Dia0 ->
+      row == col
+    Game.Dia1 ->
+      (abs (row - col) == 2) || (row == 1 && col == 1)
+  -- }}}
+
 -- }}}
