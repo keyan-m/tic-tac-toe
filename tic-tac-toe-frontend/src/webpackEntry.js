@@ -54,7 +54,11 @@ function connectWS() {
   const wsHost     = wsProtocol + "://" + host;
   socket = new WebSocket(wsHost + "/play");
   socket.addEventListener("message", function(msg) {
-    app.ports.vesselReceived.send(JSON.parse(msg.data));
+    app.ports.vesselReceived.send(
+      { theVessel  : JSON.parse(msg.data)
+      , localPOSIX : Date.now()
+      }
+    );
     console.log(JSON.parse(msg.data));
   });
   console.log("WebSocket is now open.");

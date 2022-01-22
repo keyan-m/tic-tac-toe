@@ -23,7 +23,7 @@ import Http
 --
 import Extend.String as String
 import Extend.Maybe  as Maybe
--- From Bridge.hs
+import LocalGameInfo as LGI exposing (LocalGameInfo)
 import Player exposing (ElmPlayer, ElmPlayers)
 import Game as Game exposing (ElmGame(..), GameResult)
 import Join as Join
@@ -84,7 +84,8 @@ flagsDecoder =
 
 type Page
   = LandingPage LandingPrompt
-  | GamePage (Maybe GameResult) ElmGame
+  | GamePage LocalGameInfo ElmGame
+  -- | GamePage (Maybe GameResult) ElmGame
 
 type LandingPrompt
   = NoPrompt
@@ -109,8 +110,6 @@ type alias Model =
   , url         : Url
   , darkMode    : Bool
   , seed        : Int
-  , gameTimerPaused         : Bool
-  , latestPOSIXIsFromServer : Bool
   }
 
 
@@ -135,8 +134,6 @@ init flagsVal url key =
       , url         = url
       , darkMode    = False
       , seed        = 0
-      , gameTimerPaused         = False
-      , latestPOSIXIsFromServer = False
       }
   in
   case D.decodeValue flagsDecoder flagsVal of
@@ -181,7 +178,7 @@ type Msg
   | RequestJoinGame
   | HandleJoinGameResponse (Result Http.Error Join.ElmResult)
   | SendVessel Vessel
-  | HandleVessel (Result D.Error Vessel)
+  | HandleVessel (Result D.Error (Int, Vessel))
   | IncrementGameTime Int
   | ConnectionLost
 
@@ -403,7 +400,7 @@ update msg model =
           , Cmd.batch
               [ initSocketCmd gCode model.gamerTag
               , giveTimeToMsg <|
-                  StartFadingInNewPage (GamePage Nothing newGame)
+                  StartFadingInNewPage (GamePage (LGI.init 0 Nothing) newGame)
               ]
           )
         Err err ->
@@ -472,7 +469,7 @@ update msg model =
               [ initSocketCmd model.gameCode model.gamerTag
               , giveTimeToMsg <|
                   StartFadingInNewPage
-                    ( GamePage Nothing game
+                    ( GamePage (LGI.init 0 Nothing) game
                     )
               ]
           )
@@ -490,34 +487,107 @@ update msg model =
     HandleVessel res ->
       -- {{{
       case res of
-        Ok vessel ->
+        Ok (localPOSIX, vessel) ->
           -- {{{
           let
             pV = model.programView
-            (doFade, newPage, posixUpdated) =
-              case vessel of
-                Vessel.RegistrationSuccessful newGame ->
-                  (False, GamePage Nothing newGame, True)
-                Vessel.OpponentJoined newGame ->
-                  (True, GamePage Nothing newGame, True)
-                Vessel.GameStateUpdate newGame ->
-                  (False, GamePage Nothing newGame, True)
-                Vessel.OpponentMoved newGame ->
-                  (False, GamePage Nothing newGame, True)
-                Vessel.GameEnded gameResult newGame ->
-                  (False, GamePage (Just gameResult) newGame, True)
+            currPage = getCurrentPage pV
+            withInitLocalInfo : Bool
+                             -> ElmGame
+                             -> Page
+            withInitLocalInfo startAcc newG =
+              -- {{{
+              GamePage
+                ( LGI.init
+                    localPOSIX
+                    ( if startAcc then
+                        Just (getGamesStartPOSIX newG)
+                      else
+                        Nothing
+                    )
+                )
+                newG
+              -- }}}
+            updateFromCurrLocal : LocalGameInfo
+                               -> Maybe GameResult
+                               -> ElmGame
+                               -> Page
+            updateFromCurrLocal currLocal mRes newG =
+              -- {{{
+              GamePage
+                ( let
+                    newPair = (localPOSIX, getGamesLatestPOSIX newG)
+                  in
+                  LGI.update
+                    ( case mRes of
+                        Nothing ->
+                          LGI.NewPair newPair
+                        Just result ->
+                          LGI.Conclude newPair result
+                    )
+                    currLocal
+                )
+                newG
+              -- }}}
+            (doFade, newPage) =
+              -- {{{
+              case (vessel, currPage) of
+                (Vessel.RegistrationSuccessful newGame, _) ->
+                  -- {{{
+                  ( False
+                  , withInitLocalInfo
+                      (bothPlayersOfGameAreConnected newGame)
+                      newGame
+                  )
+                  -- }}}
+                (Vessel.OpponentJoined newGame        , _) ->
+                  -- {{{
+                  ( True
+                  , withInitLocalInfo
+                      True
+                      newGame
+                  )
+                  -- }}}
+                (Vessel.GameStateUpdate newGame       , GamePage currLocal _) ->
+                  -- {{{
+                  ( False
+                  , updateFromCurrLocal
+                      currLocal
+                      Nothing
+                      newGame
+                  )
+                  -- }}}
+                (Vessel.OpponentMoved newGame         , GamePage currLocal _) ->
+                  -- {{{
+                  ( False
+                  , updateFromCurrLocal
+                      currLocal
+                      Nothing
+                      newGame
+                  )
+                  -- }}}
+                (Vessel.GameEnded gameResult newGame  , GamePage currLocal _) ->
+                  -- {{{
+                  ( False
+                  , updateFromCurrLocal
+                      currLocal
+                      (Just gameResult)
+                      newGame
+                  )
+                  -- }}}
                 _ ->
-                  (False, getCurrentPage pV, False)
-            newModel =
-              { model
-              | latestPOSIXIsFromServer = posixUpdated
-              }
+                  -- {{{
+                  ( False
+                  , currPage
+                  )
+                  -- }}}
+              -- }}}
           in
-          case model.programView of
-            PageView              _ ->
+          case pV of
+            PageView _ ->
               -- {{{
               if doFade then
-                ( newModel
+                ( model
                 , Cmd.batch
                     [ giveTimeToMsg StartFadingOut
                     , giveTimeToMsg (StartFadingInNewPage newPage)
@@ -525,14 +595,14 @@ update msg model =
                     ]
                 )
               else
-                { newModel
+                { model
                 | programView = PageView newPage
                 }
                 |> noCmd
               -- }}}
             _ ->
               -- {{{
-              { newModel
+              { model
               | pageInQueue = Just newPage
               }
               |> noCmd
@@ -585,33 +655,19 @@ update msg model =
     IncrementGameTime currMillis ->
       -- {{{
       case model.programView of
-        PageView (GamePage Nothing (ElmGame info players)) ->
+        PageView (GamePage currLGI elmGame) ->
           -- {{{
           let
-            latestPOSIX = info.latestPOSIX
-            deltaPOSIX  = currMillis - latestPOSIX
+            newPV =
+              GamePage
+                (LGI.update (LGI.SetLocalLatestPOSIX currMillis) currLGI)
+                elmGame
+              |> PageView
           in
-          if deltaPOSIX < gameTimeTickMillis then
-            ( { model
-              | gameTimerPaused = True
-              }
-            , runCmdAfter (gameTimeTickMillis - deltaPOSIX) <|
-                giveTimeToMsg IncrementGameTime
-            )
-          else
-            { model
-            | programView =
-                ElmGame
-                  { info
-                  | latestPOSIX = latestPOSIX + gameTimeTickMillis
-                  }
-                  players
-                |> GamePage Nothing
-                |> PageView
-            , gameTimerPaused         = False
-            , latestPOSIXIsFromServer = False
-            }
-            |> noCmd
+          { model
+          | programView = newPV
+          }
+          |> noCmd
           -- }}}
         _ ->
           -- {{{
@@ -924,14 +980,15 @@ viewLandingPage colorScheme fadingOut gamerTag gameCode landingPrompt =
 viewGamePage : ColorScheme
             -> Bool
             -> String
-            -> Maybe GameResult
+            -> LocalGameInfo
             -> ElmGame
             -> Html Msg
-viewGamePage colorScheme fadingOut gamerTag mRes (ElmGame info ps) =
+viewGamePage colorScheme fadingOut gamerTag lgi (ElmGame info ps) =
   -- {{{
   let
     mXP  = ps.xElmPlayer
     mOP  = ps.oElmPlayer
+    mRes = LGI.getGameResult lgi
     openSlot _ =
       -- {{{
       H.div
@@ -956,7 +1013,9 @@ viewGamePage colorScheme fadingOut gamerTag mRes (ElmGame info ps) =
       -- {{{
       let
         gameTimeStr =
-          (info.latestPOSIX - info.startPOSIX) // 1000
+          ( (Debug.log "MAYBE LATEST GAME TIME" <| LGI.getLatestGameTime info.startPOSIX lgi)
+            |> Maybe.withDefault 0
+          ) // 1000
           |> String.timerFromSeconds
       in
       H.div
@@ -1350,13 +1409,23 @@ subscriptions model =
   -- {{{
   Sub.batch
     [ BE.onResize SetViewportDimensions
-    , vesselReceived (HandleVessel << D.decodeValue Vessel.jsonDecVessel)
+    , vesselReceived
+        ( HandleVessel << D.decodeValue 
+            ( D.map2 Tuple.pair
+                (D.field "localPOSIX" D.int)
+                (D.field "theVessel"  Vessel.jsonDecVessel)
+            )
+        )
     , connectionLost (always ConnectionLost)
     , case getCurrentPage model.programView of
         LandingPage _ ->
           Sub.none
-        GamePage Nothing (ElmGame info players) ->
-          if bothPlayersAreConnected players && (not model.gameTimerPaused) then
+        GamePage lgi (ElmGame info players) ->
+          let
+            cond1 = bothPlayersAreConnected players
+            cond2 = not (LGI.getGameResult lgi |> Maybe.isJust)
+          in
+          if cond1 && cond2 then
             Time.every
               gameTimeTickMillis
               (IncrementGameTime << Time.posixToMillis)
@@ -1371,8 +1440,6 @@ subscriptions model =
           --     )
           -- else
           --   Sub.none
-        GamePage _ _ ->
-          Sub.none
     ]
   -- }}}
 
@@ -1445,6 +1512,19 @@ bothPlayersAreConnected players =
       False
   -- }}}
 
+
+bothPlayersOfGameAreConnected : ElmGame -> Bool
+bothPlayersOfGameAreConnected (ElmGame _ players) =
+  -- {{{
+  bothPlayersAreConnected players
+  -- }}}
+
+
+getGamesStartPOSIX : ElmGame -> Int
+getGamesStartPOSIX (ElmGame info _) = info.startPOSIX
+
+getGamesLatestPOSIX : ElmGame -> Int
+getGamesLatestPOSIX (ElmGame info _) = info.latestPOSIX
 
 userIsConnected : Model -> Bool
 userIsConnected model =
