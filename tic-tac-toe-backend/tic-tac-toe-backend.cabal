@@ -25,6 +25,14 @@ source-repository head
 library
   exposed-modules:
       Api
+    , Bridge
+    , Elm.Module.Extend
+    , Game
+    , Join
+    , Player
+    , RandomCode
+    , Timer
+    , Vessel
   other-modules:
       Paths_tic_tac_toe_backend
   hs-source-dirs:
@@ -34,19 +42,22 @@ library
     , base
     , bytestring
     , classy-prelude
+    , elm-bridge
     , lucid
+    , random
     , servant-lucid
     , servant-server
     , servant-websockets
     , text
     , time
     , wai
+    , wai-app-static
     , warp
     , websockets
     , mtl
   default-language: Haskell2010
 
-executable tic-tac-toe-backend-exe
+executable ttt-server
   main-is: Main.hs
   other-modules:
       Paths_tic_tac_toe_backend
@@ -60,7 +71,9 @@ executable tic-tac-toe-backend-exe
     , base
     , bytestring
     , classy-prelude
+    , elm-bridge
     , lucid
+    , random
     , servant-lucid
     , servant-server
     , servant-websockets
@@ -68,6 +81,7 @@ executable tic-tac-toe-backend-exe
     , tic-tac-toe-backend
     , time
     , wai
+    , wai-app-static
     , warp
     , websockets
     , mtl
